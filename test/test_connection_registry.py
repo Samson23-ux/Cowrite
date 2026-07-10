@@ -196,7 +196,7 @@ class TestBroadcast:
         assert doc_id not in connection_registry.active_connections
 
 
-class TestRoomConnections:
+class TestRoomConnectionsMetrics:
     @pytest.mark.asyncio
     async def test_get_connections(self, connection_registry: ConnectionRegistry):
         doc_id = uuid4()
