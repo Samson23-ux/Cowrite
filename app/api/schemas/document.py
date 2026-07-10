@@ -1,4 +1,4 @@
-from uuid import UUID
+from uuid import UUID, uuid7
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,7 +11,7 @@ class DocumentBase(BaseModel):
 
 
 class DocumentInDb(DocumentBase):
-    sequence: int
+    id: UUID = uuid7()
     created_by: UUID
 
 

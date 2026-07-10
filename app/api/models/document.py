@@ -31,7 +31,7 @@ class Document(Base):
     )
     title: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(String)
-    sequence: Mapped[int] = mapped_column(Integer)
+    sequence: Mapped[int] = mapped_column(Integer, default=0)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID, ForeignKey("users.id", name="documents_created_by_fk", ondelete="CASCADE")
     )
@@ -40,11 +40,15 @@ class Document(Base):
     )
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    __table_args__ = (PrimaryKeyConstraint("id", name="documents_pk"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("id", name="documents_pk"),
+        Index("idx_documents_created_by", created_by),
+    )
 
 
 class DocumentMember(Base):
     """all memebrs present in a document room"""
+
     __tablename__ = "document_members"
 
     document_id: Mapped[uuid.UUID] = mapped_column(
@@ -65,5 +69,5 @@ class DocumentMember(Base):
 
     __table_args__ = (
         PrimaryKeyConstraint("document_id", "user_id", name="document_members_pk"),
-        Index("idx_document_members", document_id, user_id)
+        Index("idx_document_members", document_id, user_id),
     )

@@ -52,6 +52,13 @@ class UserNotFoundError(AppException):
         self.user_email = user_email
 
 
+class DocumentNotFoundError(AppException):
+    """Dcoument not found"""
+
+    def __init__(self, doc_id: str):
+        self.doc_id = doc_id
+
+
 class InvalidOtpError(AppException):
     """Invalid otp received"""
 

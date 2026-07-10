@@ -18,6 +18,8 @@ from app.api.repo.redis import RedisRepository
 from app.api.services.email import EmailService
 from app.api.repo.uow import UnitOfWorkRepository
 from app.core.exceptions import AuthenticationError
+from app.api.repo.document import DocumentRepository
+from app.api.services.document import DocumentService
 
 # Auth bearer
 bearer = HTTPBearer(auto_error=False)
@@ -66,10 +68,15 @@ async def get_unit_of_work(session: DBSession) -> UnitOfWorkRepository:
     return UnitOfWorkRepository(session=session)
 
 
+async def get_document_repo(session: DBSession) -> DocumentRepository:
+    return DocumentRepository(async_session=session)
+
+
 OtpRepo = Annotated[OtpRepository, Depends(get_otp_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 RedisRepo = Annotated[RedisRepository, Depends(get_redis_repo)]
 EmailRepo = Annotated[EmailRepository, Depends(get_email_repo)]
+DocumentRepo = Annotated[DocumentRepository, Depends(get_document_repo)]
 UnitOfWorkRepo = Annotated[UnitOfWorkRepository, Depends(get_unit_of_work)]
 
 #  -------------------- Service dependency ---------------------------- #
@@ -87,9 +94,14 @@ async def get_auth_service(otp_repo: OtpRepo, redis_repo: RedisRepo) -> AuthServ
     return AuthService(otp_repo=otp_repo, redis_repo=redis_repo)
 
 
+async def get_document_service(doc_repo: DocumentRepo) -> DocumentService:
+    return DocumentService(doc_repo=doc_repo)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 EmailServiceDep = Annotated[EmailService, Depends(get_email_service)]
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 
 # ------------------------ Auth dependency ---------------------------- #
 

@@ -10,6 +10,7 @@ from app.core.exceptions import (
     CredentialError,
     AuthorizationError,
     ServiceUnavailable,
+    DocumentNotFoundError
 )
 
 
@@ -103,5 +104,16 @@ class ExceptionHandler:
                     "message": "Invalid credentials!",
                 },
                 status_code=400,
+            ),
+        )
+
+        self._app.add_exception_handler(
+            exc_class_or_status_code=DocumentNotFoundError,
+            handler=create_exception_handler(
+                status_code=404,
+                initial_detail={
+                    "status": "error",
+                    "message": "Document not found with id {doc_id}",
+                },
             ),
         )
