@@ -1,0 +1,25 @@
+[project]
+name = "Cowrite"
+version = "0.1.0"
+description = "A Real Time Collaboration Backend"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic",
+    "asgi-lifespan",
+    "asyncpg",
+    "authlib",
+    "celery",
+    "fastapi[all]",
+    "gevent",
+    "psycopg",
+    "psycopg2",
+    "pwdlib[argon2]",
+    "pytest",
+    "pytest-asyncio",
+    "python-jose",
+    "redis",
+    "resend",
+    "slowapi",
+    "sqlalchemy",
+]
