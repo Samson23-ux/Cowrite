@@ -4,6 +4,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from sentry_sdk import logger as sentry_logger
 
 
+from app.api.services.event import EventBus
 from app.api.schemas.websocket import WebSocket as WebSocketSchema
 
 
@@ -11,9 +12,16 @@ class ConnectionRegistry:
     def __init__(self):
         self.active_connections: dict[UUID, list[WebSocketSchema]] = {}
 
-    async def connect(self, doc_id: UUID, websocket_schema: WebSocketSchema):
+    async def connect(
+        self,
+        doc_id: UUID,
+        websocket_schema: WebSocketSchema,
+        event_bus: EventBus,
+        channel: str,
+    ):
         if doc_id not in self.active_connections:
             self.active_connections[doc_id] = []
+            await event_bus.subscribe(channel)
         self.active_connections[doc_id].append(websocket_schema)
 
         sentry_logger.info(
@@ -21,7 +29,13 @@ class ConnectionRegistry:
             extra={"doc_id": doc_id, "user_id": websocket_schema.user_id},
         )
 
-    async def disconnect(self, doc_id: UUID, websocket_schema: WebSocketSchema):
+    async def disconnect(
+        self,
+        doc_id: UUID,
+        websocket_schema: WebSocketSchema,
+        event_bus: EventBus,
+        channel: str,
+    ):
         if doc_id in self.active_connections:
             try:
                 self.active_connections[doc_id].remove(websocket_schema)
@@ -33,6 +47,7 @@ class ConnectionRegistry:
 
                 if not self.active_connections[doc_id]:
                     del self.active_connections[doc_id]
+                    await event_bus.unsubscribe(channel)
 
                     sentry_logger.info(
                         "Document room closed!", extra={"doc_id": doc_id}
