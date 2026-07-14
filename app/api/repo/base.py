@@ -50,6 +50,12 @@ class BaseRepository(ABC, Generic[Entity, SqlalchemyModel]):
         await self._async_session.delete(model)
         await self._async_session.flush()
 
+    async def _get_records(self, **filters) -> Sequence[SqlalchemyModel]:
+        filter_conditions: list[Any] = self._get_filters(**filters)
+
+        res = await self._async_session.execute(select(self.model).where(*filter_conditions))
+        return res.scalars().all()
+
     async def get_records(
         self,
         sort: str,

@@ -34,6 +34,7 @@ class User(Base):
     hashed_password: Mapped[str | None] = mapped_column(String)
     google_id: Mapped[str | None] = mapped_column(String)
     google_email: Mapped[str | None] = mapped_column(String, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(

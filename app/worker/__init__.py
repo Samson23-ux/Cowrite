@@ -1,4 +1,4 @@
-from app.worker.celery_app import celery_app
+from app.worker.celery_app import celery_app, event_bus
 from app.worker.db import get_db_session, get_redis_client
 from app.worker.services import (
     get_redis_repo,
@@ -8,6 +8,7 @@ from app.worker.services import (
 from app.worker.tasks.base import BaseTaskWithFailure
 
 __all__ = [
+    "event_bus",
     "celery_app",
     "get_redis_repo",
     "get_db_session",

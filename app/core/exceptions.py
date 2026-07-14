@@ -38,11 +38,18 @@ class AuthorizationError(AppException):
     pass
 
 
-class UserExistsError(AppException):
-    """User already exists"""
+class EmailExistsError(AppException):
+    """Email already exists"""
 
     def __init__(self, user_email: str):
         self.user_email = user_email
+
+
+class NameExistsError(AppException):
+    """Display name already exists"""
+
+    def __init__(self, display_name: str):
+        self.display_name = display_name
 
 
 class UserNotFoundError(AppException):

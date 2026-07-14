@@ -31,6 +31,7 @@ class ResendOtp(AuthBase):
 
 class EmailLogin(AuthBase):
     email: EmailStr
+    display_name: str = Field(..., min_length=8)
     password: str = Field(..., min_length=8)
 
 

@@ -27,7 +27,8 @@ from app.api.schemas.auth import (
     ResendOtp,
 )
 from app.core.exceptions import (
-    UserExistsError,
+    EmailExistsError,
+    NameExistsError,
     InvalidOtpError,
     ServerError,
     CredentialError,
@@ -52,7 +53,7 @@ class AuthService:
         key: str = f"tokens:{refresh_token_id}"
 
         try:
-            await self._redis_repo.add_refresh_token(key, refresh_token_payload)
+            await self._redis_repo.create_hset(key, refresh_token_payload)
         except Exception as e:
             sentry_sdk.capture_exception(e)
             sentry_logger.error("Error occurred while saving refresh token to redis")
@@ -74,7 +75,7 @@ class AuthService:
         refresh_token_id: str = refresh_token["jti"]
         key: str = f"tokens:{refresh_token_id}"
 
-        refresh_token_db: dict = await self._redis_repo.get_refresh_token(key)
+        refresh_token_db: dict = await self._redis_repo.get_hset(key)
 
         if not refresh_token_db:
             sentry_logger.error("Inavlid refresh token received during refresh")
@@ -84,7 +85,7 @@ class AuthService:
         user_type: str = refresh_token_db["user_type"]
 
         try:
-            await self._redis_repo.delete_refresh_token(key)
+            await self._redis_repo.delete_key(key)
         except Exception as e:
             sentry_sdk.capture_exception(e)
             sentry_logger.error(
@@ -103,36 +104,50 @@ class AuthService:
     ):
         email_id: UUID = uuid7()
         user_email: str = email_login.email
+        display_name: str = email_login.display_name
         hashed_password: str = await security.hash_password(email_login.password)
 
-        existing_user: User | None = await user_service._get_user_by_email(
+        existing_email: User | None = await user_service._get_user_by_email(
             email=user_email
         )
 
-        if existing_user:
-            if not existing_user.is_verified:
-                existing_user.hashed_password = hashed_password
-                await user_service.update_user(existing_user)
+        existing_name: User | None = await user_service._get_user_by_email(
+            display_name=display_name
+        )
 
-                email_db: EmailInDB = EmailInDB(
-                    id=email_id, processed_email=existing_user.email
-                )
+        if existing_email or existing_name:
+            if not existing_email.is_verified:
+                existing_email.hashed_password = hashed_password
+                await user_service.update_user(existing_email)
+
+                email_db: EmailInDB = EmailInDB(id=email_id, processed_email=user_email)
                 await email_service.create_email(email_db)
 
                 send_verification_email.apply_async(
                     priority=5,
                     kwargs={
                         "email_id": email_id,
-                        "recipient_email": existing_user.email,
-                        "user_id": str(existing_user.id),
+                        "recipient_email": user_email,
+                        "user_id": str(existing_email.id),
                     },
                 )
             else:
-                sentry_logger.error("User exists with email {email}", email=user_email)
-                raise UserExistsError(user_email=user_email)
+                if existing_email:
+                    sentry_logger.error(
+                        "User exists with email {email}", email=user_email
+                    )
+                    raise EmailExistsError(user_email=user_email)
+                else:
+                    sentry_logger.error(
+                        "User exists with display name {name}", name=display_name
+                    )
+                    raise NameExistsError(user_email=user_email)
         else:
             user = UserInDB(
-                email=user_email, hashed_password=hashed_password, type="email"
+                display_name=display_name,
+                email=user_email,
+                hashed_password=hashed_password,
+                type="email",
             )
             await user_service.create_user(user, user_email)
 
@@ -162,15 +177,22 @@ class AuthService:
 
         google_id: str = user_info.get("sub")
         user_email: str = user_info.get("email")
+        display_name: str = user_info.get("name")
 
-        existing_user: User | None = await user_service._get_user_by_email(
+        existing_email: User | None = await user_service._get_user_by_email(
             google_email=user_email,
             is_verified=True,
         )
 
-        if existing_user:
-            existing_user.is_active = True
-            await user_service.update_user(existing_user)
+        existing_name: User | None = await user_service._get_user_by_email(
+            display_name=display_name,
+            is_verified=True,
+        )
+
+        if existing_email or existing_name:
+            if not existing_email.is_active:
+                existing_email.is_active = True
+                await user_service.update_user(existing_email)
         else:
             user = UserInDB(
                 type="google",
@@ -178,6 +200,7 @@ class AuthService:
                 is_verified=True,
                 google_id=google_id,
                 google_email=user_email,
+                display_name=display_name,
             )
             await user_service.create_user(user, user_email)
 

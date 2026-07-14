@@ -21,7 +21,9 @@ class ConnectionRegistry:
     ):
         if doc_id not in self.active_connections:
             self.active_connections[doc_id] = []
-            await event_bus.subscribe(channel)
+            await event_bus.subscribe(
+                channel
+            )  # subscribe on first connection to doc room
         self.active_connections[doc_id].append(websocket_schema)
 
         sentry_logger.info(
@@ -47,7 +49,9 @@ class ConnectionRegistry:
 
                 if not self.active_connections[doc_id]:
                     del self.active_connections[doc_id]
-                    await event_bus.unsubscribe(channel)
+                    await event_bus.unsubscribe(
+                        channel
+                    )  # unsubscribe when doc room becomes empty
 
                     sentry_logger.info(
                         "Document room closed!", extra={"doc_id": doc_id}

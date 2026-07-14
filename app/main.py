@@ -6,12 +6,15 @@ from slowapi.middleware import SlowAPIMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from starlette.middleware.sessions import SessionMiddleware
 
+
 from app.limiter import limiter
 from app.api.routers import router
 from app.core.security import Security
 from app.core.config import get_settings
+from app.api.services.event import EventBus
 from app.database.session import redis_client
 from app.core.exception_handlers import ExceptionHandler
+from app.api.services.connection_registry import ConnectionRegistry
 
 SECURITY = Security()
 SETTINGS = get_settings()
@@ -30,10 +33,13 @@ sentry_sdk.init(
 async def lifespan(app: FastAPI):
     await SECURITY.register_oauth()
     app.state.redis = redis_client
+    app.state.registry = ConnectionRegistry()
+    app.state.event_bus = EventBus(async_redis=app.state.redis)
 
     yield
 
     await app.state.redis.aclose()
+    await app.state.event_bus._async_pubsub.aclose()
 
 
 app = FastAPI(

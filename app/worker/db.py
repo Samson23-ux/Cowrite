@@ -34,4 +34,6 @@ def get_db_session() -> Session:
 
 
 def get_redis_client() -> Redis:
-    return Redis(connection_pool=redis_pool)
+    redis = Redis(connection_pool=redis_pool)
+    redis.config_set("notify-keyspace-events", "Kx")
+    return redis

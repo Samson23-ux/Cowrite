@@ -3,6 +3,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+from app.api.models.document import DocumentRoleEnum
+
+
 class DocumentBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -17,6 +20,12 @@ class DocumentInDb(DocumentBase):
 
 class DocumentCreate(DocumentBase):
     pass
+
+
+class DocumentMember(BaseModel):
+    doc_id: UUID
+    user_id: UUID
+    role: DocumentRoleEnum
 
 
 class DocumentResponse(BaseModel):

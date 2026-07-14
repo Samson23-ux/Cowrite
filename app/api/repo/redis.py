@@ -1,3 +1,4 @@
+from typing import Optional
 from redis.asyncio import Redis
 from redis import Redis as SyncRedis
 
@@ -7,11 +8,29 @@ class RedisRepository:
         self._sync_redis = sync_redis
         self._async_redis = async_redis
 
-    async def add_refresh_token(self, key: str, value: dict):
-        await self._async_redis.hset(key, mapping=value)
+    async def create_hset(self, key: str, mapping: dict):
+        await self._async_redis.hset(key, mapping=mapping)
 
-    async def get_refresh_token(self, key: str) -> dict:
+    async def create_sorted_set(self, key: str, mapping: dict):
+        await self._async_redis.zadd(key, mapping)
+
+    async def increment_counter(self, key: str) -> int:
+        return await self._async_redis.incr(key)
+
+    async def set_key(self, key: str, value: str, expire: Optional[int] = None):
+        await self._async_redis.set(key, value, ex=expire)
+
+    async def reset_key_ttl(self, key: str, expire: int):
+        await self._async_redis.expire(key, expire)
+
+    async def get_key(self, key: str) -> str:
+        return await self._async_redis.get(key)
+
+    async def get_sorted_set(self, key: str, min: int = "-inf", max: int = "+inf"):
+        await self._async_redis.zrangebyscore(key, min, max)
+
+    async def get_hset(self, key: str) -> dict:
         return await self._async_redis.hgetall(key)
 
-    async def delete_refresh_token(self, key: str):
+    async def delete_key(self, key: str):
         await self._async_redis.delete(key)

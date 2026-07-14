@@ -1,14 +1,16 @@
+from fastapi import Query
 from typing import Annotated
 from redis.asyncio import Redis
-from fastapi import Depends, Request
 import sentry_sdk.logger as sentry_logger
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, Request, WebSocketException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.api.models.user import User
 from app.core.security import Security
 from app.core.config import get_settings
 from app.api.repo.otp import OtpRepository
+from app.api.services.event import EventBus
 from app.database.session import get_session
 from app.api.repo.user import UserRepository
 from app.api.services.auth import AuthService
@@ -20,6 +22,8 @@ from app.api.repo.uow import UnitOfWorkRepository
 from app.core.exceptions import AuthenticationError
 from app.api.repo.document import DocumentRepository
 from app.api.services.document import DocumentService
+from app.api.services.websocket import WebSocketService
+from app.api.services.transformation import Transformation
 
 # Auth bearer
 bearer = HTTPBearer(auto_error=False)
@@ -98,10 +102,26 @@ async def get_document_service(doc_repo: DocumentRepo) -> DocumentService:
     return DocumentService(doc_repo=doc_repo)
 
 
+async def get_event_bus(request: Request,) -> EventBus:
+    return request.app.state.event_bus
+
+
+async def get_websocket_service(request: Request, redis_repo: RedisRepo) -> WebSocketService:
+    registry = request.app.state.registry
+    return WebSocketService(registry=registry, redis=redis_repo)
+
+
+async def get_transformation(trans: Transformation) -> Transformation:
+    return Transformation()
+
+
+EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 EmailServiceDep = Annotated[EmailService, Depends(get_email_service)]
+TransformationDep = Annotated[Transformation, Depends(get_transformation)]
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+WebSocketServiceDep = Annotated[WebSocketService, Depends(get_websocket_service)]
 
 # ------------------------ Auth dependency ---------------------------- #
 
@@ -147,4 +167,40 @@ async def get_current_active_user(curr_user: CurrentUser):
     return curr_user
 
 
+async def authenticate_websocket_connection(
+    token: Annotated[str | None, Query()],
+) -> tuple[User, str]:
+    security: Security = Security()
+    session = await anext(get_session())
+    user_service = UserService(UserRepository(async_session=session))
+
+    if not token:
+        sentry_logger.error("User not authenticated")
+        raise WebSocketException(code=1008, reason="User not authenticated")
+
+    key: str = get_settings().ACCESS_TOKEN_SECRET_KEY
+    payload: dict = await security.decode_token(token, key)
+
+    if not payload:
+        sentry_logger.error("User not authenticated")
+        raise WebSocketException(code=1008, reason="User not authenticated")
+
+    user_email: str = payload.get("sub")
+    user_type: str = payload.get("usertype")
+
+    if user_type == "email":
+        user: User = await user_service.get_user_by_email(
+            email=user_email, is_verified=True
+        )
+    else:
+        user: User = await user_service.get_user_by_email(
+            google_email=user_email, is_verified=True
+        )
+
+    if user.is_active is False:
+        raise WebSocketException(code=1008, reason="User not authenticated")
+    return user, user_email
+
+
 CurrentActiveUser = Annotated[User, Depends(get_current_active_user)]
+WebSocketAuth = Annotated[tuple[User, str], Depends(authenticate_websocket_connection)]

@@ -8,8 +8,7 @@ from app.api.repo.base import BaseRepository
 class EmailRepository(BaseRepository[EmailBase, Email]):
     model = Email
 
-    @staticmethod
-    def _entity_to_model(entity: EmailBase) -> Email:
+    def _entity_to_model(self, entity: EmailBase) -> Email:
         return Email(**entity.model_dump())
 
     def _get_filters(self, **filters) -> list[Any]:

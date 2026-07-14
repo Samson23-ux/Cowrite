@@ -9,8 +9,7 @@ from app.api.repo.base import BaseRepository
 class UserRepository(BaseRepository[UserBase, User]):
     model = User
 
-    @staticmethod
-    def _entity_to_model(entity: UserBase) -> model:
+    def _entity_to_model(self, entity: UserBase) -> model:
         return User(**entity.model_dump())
 
     def _get_filters(self, **filters) -> list[Any]:
@@ -18,6 +17,8 @@ class UserRepository(BaseRepository[UserBase, User]):
 
         if "email" in filters:
             filter_conditions.append(self.model.email == filters["email"])
+        if "display_name" in filters:
+            filter_conditions.append(self.model.display_name == filters["display_name"])
         if "google_email" in filters:
             filter_conditions.append(self.model.google_email == filters["google_email"])
         if "is_active" in filters:

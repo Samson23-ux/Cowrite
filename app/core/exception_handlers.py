@@ -4,13 +4,14 @@ from app.core.exceptions import (
     create_exception_handler,
     ServerError,
     AuthenticationError,
-    UserExistsError,
+    EmailExistsError,
+    NameExistsError,
     InvalidOtpError,
     UserNotFoundError,
     CredentialError,
     AuthorizationError,
     ServiceUnavailable,
-    DocumentNotFoundError
+    DocumentNotFoundError,
 )
 
 
@@ -64,12 +65,23 @@ class ExceptionHandler:
         )
 
         self._app.add_exception_handler(
-            exc_class_or_status_code=UserExistsError,
+            exc_class_or_status_code=EmailExistsError,
             handler=create_exception_handler(
                 status_code=409,
                 initial_detail={
                     "status": "error",
                     "message": "User already exists with the provided email {user_email}",
+                },
+            ),
+        )
+
+        self._app.add_exception_handler(
+            exc_class_or_status_code=NameExistsError,
+            handler=create_exception_handler(
+                status_code=409,
+                initial_detail={
+                    "status": "error",
+                    "message": "User already exists with the provided display name {display_name}",
                 },
             ),
         )

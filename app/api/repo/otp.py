@@ -9,8 +9,7 @@ from app.api.repo.base import BaseRepository
 class OtpRepository(BaseRepository[AuthBase, Otp]):
     model = Otp
 
-    @staticmethod
-    def _entity_to_model(entity: AuthBase) -> model:
+    def _entity_to_model(self, entity: AuthBase) -> model:
         return Otp(**entity.model_dump())
 
     def _get_filters(self, **filters) -> list[Any]:
