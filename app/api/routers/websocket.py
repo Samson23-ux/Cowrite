@@ -24,7 +24,6 @@ async def connect(
     trans: TransformationDep,
     document_service: DocumentServiceDep,
     websocket_service: WebSocketServiceDep,
-    seq: Optional[int] = None,
 ):
     # replay if seq is received
     doc_id = None

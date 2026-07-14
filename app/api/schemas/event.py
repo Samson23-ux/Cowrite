@@ -13,6 +13,7 @@ class EventType(str, Enum):
     JOINED = "joined"
     CURSOR = "cursor"
     TYPING = "typing"
+    REPLAY = "replay"
     PRESENCE = "presence"
     OPERATION = "operation"
     USER_LEFT = "user_left"
@@ -63,6 +64,11 @@ class CursorEvent(EventBase):
 
 class TypingEvent(EventBase):
     type: EventType = EventType.TYPING
+
+
+class ReplayEvent(EventBase):
+    type: EventType = EventType.REPLAY
+    seq: int
 
 
 class PingEvent(BaseModel):

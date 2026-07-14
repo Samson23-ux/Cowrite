@@ -43,14 +43,15 @@ class DocumentService:
 
             document_db: Document = await self._get_document(id=document.id)
 
-            sentry_logger.info("Document created!", extra={"email": user_email})
+            extra: dict = {"email": user_email}
+            sentry_logger.info("Document created!", extra=extra)
             return DocumentResponse.model_validate(document_db)
         except Exception as exc:
             self._doc_repo.rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
-                "Error occurred while creating document", extra={"email": user_email}
+                "Error occurred while creating document", extra=extra
             )
             raise ServerError() from exc
 
@@ -58,16 +59,22 @@ class DocumentService:
         try:
             self._member_repo.add(entity=document_member)
             await self._member_repo.commit()
+
+            extra: dict = {
+                "doc_id": document_member.doc_id,
+                "user_id": document_member.user_id,
+            }
+            sentry_logger.info(
+                "Document member created!",
+                extra=extra,
+            )
         except Exception as exc:
             await self._member_repo.rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
                 "Error occured while creating document member",
-                extra={
-                    "doc_id": document_member.doc_id,
-                    "user_id": document_member.user_id,
-                },
+                extra=extra,
             )
             raise WebSocketException(code=1011, reason="Internal Server Error")
 
@@ -88,16 +95,15 @@ class DocumentService:
         try:
             document: Document | None = await self._get_document(id=document_id)
 
+            extra: dict = {"id": document_id, "email": user_email}
             if not document:
                 sentry_logger.error(
                     "Document not found!",
-                    extra={"id": document_id, "email": user_email},
+                    extra=extra,
                 )
                 raise DocumentNotFoundError(doc_id=document_id)
 
-            sentry_logger.info(
-                "Document retrieved!", extra={"id": document_id, "email": user_email}
-            )
+            sentry_logger.info("Document retrieved!", extra=extra)
             return DocumentResponse.model_validate(document)
         except Exception as exc:
             if isinstance(exc, DocumentNotFoundError):
@@ -113,13 +119,52 @@ class DocumentService:
         try:
             self._doc_repo.add(model=document)
             await self._doc_repo.commit()
+
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+            sentry_logger.info("Document updated!", extra=extra)
+        except Exception as exc:
+            await self._doc_repo.rollback()
+
+            sentry_sdk.capture_exception(exc)
+            sentry_logger.error(
+                "Error occured while updating document",
+                extra=extra,
+            )
+            raise WebSocketException(code=1011, reason="Internal Server Error")
+
+    async def _update_document_member(
+        self, document: DocumentMember, user_id: UUID, doc_id: UUID
+    ):
+        try:
+            self._member_repo.add(model=document)
+            await self._member_repo.commit()
+
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+            sentry_logger.info("Document member updated!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
-                "Error occured while updating document",
-                extra={"doc_id": doc_id, "user_id": user_id},
+                "Error occured while updating document memeber",
+                extra=extra,
+            )
+            raise WebSocketException(code=1011, reason="Internal Server Error")
+
+    async def _update_member_role(self, role: str, **filters):
+        try:
+            await self._member_repo.update_role(role, **filters)
+            await self._member_repo.commit()
+
+            extra: dict = {"doc_id": filters["doc_id"], "user_id": filters["user_id"]}
+            sentry_logger.info("Document member role updated!", extra=extra)
+        except Exception as exc:
+            await self._member_repo.rollback()
+
+            sentry_sdk.capture_exception(exc)
+            sentry_logger.error(
+                "Error occured while updating document memeber role",
+                extra=extra,
             )
             raise WebSocketException(code=1011, reason="Internal Server Error")
 
@@ -129,12 +174,15 @@ class DocumentService:
         try:
             await self._member_repo.delete(member)
             await self._member_repo.commit()
+
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+            sentry_logger.info("Document member deleted!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
                 "Error occured while deleting document member",
-                extra={"doc_id": doc_id, "user_id": user_id},
+                extra=extra,
             )
             raise WebSocketException(code=1011, reason="Internal Server Error")

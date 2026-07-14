@@ -9,6 +9,11 @@ from app.api.schemas.websocket import WebSocket as WebSocketSchema
 
 
 class ConnectionRegistry:
+    """
+    Contains mapping of documents and a list of connection,
+    connection/disconnection from a room and lifecycle management
+    """
+
     def __init__(self):
         self.active_connections: dict[UUID, list[WebSocketSchema]] = {}
 
@@ -24,7 +29,9 @@ class ConnectionRegistry:
             await event_bus.subscribe(
                 channel
             )  # subscribe on first connection to doc room
-        self.active_connections[doc_id].append(websocket_schema)
+
+        if websocket_schema not in self.active_connections[doc_id]:
+            self.active_connections[doc_id].append(websocket_schema)
 
         sentry_logger.info(
             "Document room joined!",
@@ -62,9 +69,23 @@ class ConnectionRegistry:
                     extra={"doc_id": doc_id, "user_id": websocket_schema.user_id},
                 )
 
+    async def get_connections(self, doc_id: UUID) -> list[WebSocketSchema]:
+        if doc_id in self.active_connections:
+            return self.active_connections[doc_id]
+        return []
+
     async def get_room_connections(self, doc_id: UUID) -> int:
         if doc_id in self.active_connections:
             return len(self.active_connections[doc_id])
+        return 0
+
+    async def check_connectivity(
+        self, doc_id: UUID, websocket_schema: WebSocketSchema
+    ) -> bool:
+        try:
+            return websocket_schema in self.active_connections[doc_id]
+        except KeyError:
+            return False
 
     async def broadcast(
         self, doc_id: UUID, websocket_schema: WebSocketSchema, data: dict

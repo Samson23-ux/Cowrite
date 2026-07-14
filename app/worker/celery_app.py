@@ -34,8 +34,10 @@ def on_worker_init(**kwargs):
 
     event_bus = EventBus(sync_redis=redis)
     event_bus.sync_psubscribe("__keyspace@0__:typing:*")
+    event_bus.sync_psubscribe("__keyspace@0__:presence:*")
 
 @worker_process_shutdown.connect
 def on_worker_shutdown(**kwargs):
     event_bus.sync_punsubscribe("__keyspace@0__:typing:*")
+    event_bus.sync_punsubscribe("__keyspace@0__:presence:*")
     event_bus._sync_pubsub.close()

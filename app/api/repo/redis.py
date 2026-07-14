@@ -26,8 +26,12 @@ class RedisRepository:
     async def get_key(self, key: str) -> str:
         return await self._async_redis.get(key)
 
-    async def get_sorted_set(self, key: str, min: int = "-inf", max: int = "+inf"):
-        await self._async_redis.zrangebyscore(key, min, max)
+    async def get_sorted_set(
+        self, key: str, min: int = "-inf", max: int = "+inf", with_scores: bool = False
+    ) -> list[tuple]:
+        return await self._async_redis.zrangebyscore(
+            key, min, max, withscores=with_scores
+        )
 
     async def get_hset(self, key: str) -> dict:
         return await self._async_redis.hgetall(key)
