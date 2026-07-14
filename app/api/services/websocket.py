@@ -46,12 +46,13 @@ class WebSocketService:
     async def cleanup_connection(
         self,
         doc_id: UUID,
-        user_id: UUID,
         event_bus: EventBus,
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,
     ):
         try:
+            user_id: UUID = websocket_schema.user_id
+
             channel: str = f"room:{doc_id}"
             await self._registry.disconnect(
                 doc_id, websocket_schema, event_bus, channel
@@ -64,7 +65,15 @@ class WebSocketService:
             if member:
                 await document_service._delete_document_member(member, user_id, doc_id)
 
-            await self._redis.delete_key(f"presence:{doc_id}:{user_id}")
+            connections: list[WebSocketSchema] = self._registry.get_connections(
+                doc_id
+            )
+            document_members: list[UUID] = [c.user_id for c in connections]
+
+            presence: dict = PresenceResponse(
+                doc_id=doc_id, users=document_members
+            ).model_dump()
+            await event_bus.publish(channel, presence)
         except Exception as exc:
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
@@ -82,15 +91,13 @@ class WebSocketService:
 
     async def receive_client_message(
         self,
-        event_bus: EventBus,
-        websocket: WebSocket,
-        trans: Transformation,
         doc_id: UUID,
-        user_id: UUID,
-        user_email: str,
-        display_name: str,
-        user_docs: list[UUID],
         message: dict,
+        display_name: str,
+        event_bus: EventBus,
+        user_docs: list[UUID],
+        trans: Transformation,
+        websocket_schema: WebSocketSchema,
         document_service: DocumentService,
     ):
         if "type" not in message:
@@ -98,10 +105,6 @@ class WebSocketService:
 
         channel: str = f"room:{doc_id}"
         type: str = message.get("type").lower()
-
-        websocket_schema: WebSocketSchema = WebSocketSchema(
-            websocket=websocket, user_id=user_id, user_email=user_email
-        )
 
         if type == "join":
             await self.process_join_event(
@@ -213,7 +216,8 @@ class WebSocketService:
                 )
                 await document_service._create_document_member(document_member)
 
-            presence_key: str = f"presence:{doc_id}:{user_id}"
+            schema_json: str = json.dumps(websocket_schema.model_dump())
+            presence_key: str = f"presence:{doc_id}:{schema_json}"
             await self._redis.set_key(presence_key, display_name, 30)
 
             user_joined_response: dict = UserJoinedResponse(
@@ -221,7 +225,7 @@ class WebSocketService:
             ).model_dump()
             await event_bus.publish(channel, user_joined_response)
 
-            connections: list[WebSocketSchema] = await self._registry.get_connections(
+            connections: list[WebSocketSchema] = self._registry.get_connections(
                 doc_id
             )
             document_members: list[UUID] = [c.user_id for c in connections]
@@ -260,7 +264,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -296,7 +300,7 @@ class WebSocketService:
             ).model_dump()
             await event_bus.publish(channel, left_response)
 
-            connections: list[WebSocketSchema] = await self._registry.get_connections(
+            connections: list[WebSocketSchema] = self._registry.get_connections(
                 doc_id
             )
             document_members: list[UUID] = [c.user_id for c in connections]
@@ -332,7 +336,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -436,7 +440,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -465,7 +469,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -475,7 +479,8 @@ class WebSocketService:
         try:
             _ = PingEvent.model_validate(message)
 
-            key: str = f"presence:{doc_id}:{user_id}"
+            schema_json: str = json.dumps(websocket_schema.model_dump())
+            key: str = f"presence:{doc_id}:{schema_json}"
             await self._redis.reset_key_ttl(key, 30)
 
             await self._registry.broadcast(
@@ -499,7 +504,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -532,7 +537,7 @@ class WebSocketService:
         user_id: UUID = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
-        if not await self._registry.check_connectivity(doc_id, websocket_schema):
+        if not self._registry.check_connectivity(doc_id, websocket_schema):
             sentry_logger.error(
                 "Client connection not found!",
                 extra=extra,
@@ -564,3 +569,44 @@ class WebSocketService:
                 extra=extra,
             )
             raise WebSocketException(code=1003, reason="Invalid payload!")
+        
+    # sync
+
+    def sync_cleanup_connection(
+        self,
+        doc_id: UUID,
+        event_bus: EventBus,
+        websocket_schema: WebSocketSchema,
+        document_service: DocumentService,
+    ):
+        try:
+            user_id: UUID = websocket_schema.user_id
+
+            channel: str = f"room:{doc_id}"
+            self._registry.sync_disconnect(
+                doc_id, websocket_schema, event_bus, channel
+            )
+
+            member: Document | None = document_service._sync_get_document_member(
+                document_id=doc_id, user_id=user_id
+            )
+
+            if member:
+                document_service._sync_delete_document_member(member, user_id, doc_id)
+
+            connections: list[WebSocketSchema] = self._registry.get_connections(
+                doc_id
+            )
+            document_members: list[UUID] = [c.user_id for c in connections]
+
+            presence: dict = PresenceResponse(
+                doc_id=doc_id, users=document_members
+            ).model_dump()
+            event_bus.sync_publish(channel, presence)
+        except Exception as exc:
+            sentry_sdk.capture_exception(exc)
+            sentry_logger.error(
+                "Error occured while cleaning connection",
+                extra={"doc_id": doc_id, "user_id": user_id},
+            )
+            raise WebSocketException(code=1011, reason="Internal Server Error")

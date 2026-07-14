@@ -86,6 +86,10 @@ class EventBus:
         self._sync_pubsub.punsubscribe(channel)
         sentry_logger.info("Unsubscribed from channel!", extra={"channel": channel})
 
+    def sync_unsubscribe(self, channel: str):
+        self._sync_pubsub.unsubscribe(channel)
+        sentry_logger.info("Unsubscribed from channel!", extra={"channel": channel})
+
     def sync_publish(self, channel: str, data: dict):
         try:
             message = json.dumps(data)

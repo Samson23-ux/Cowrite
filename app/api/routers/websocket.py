@@ -25,7 +25,6 @@ async def connect(
     document_service: DocumentServiceDep,
     websocket_service: WebSocketServiceDep,
 ):
-    # replay if seq is received
     doc_id = None
 
     curr_user, user_email = token
@@ -44,15 +43,13 @@ async def connect(
             if client_message:
                 doc_id = client_message.get("doc_id", "")
                 await websocket_service.receive_client_message(
-                    event_bus,
-                    websocket,
-                    trans,
                     doc_id,
-                    user_id,
-                    user_email,
-                    curr_user.display_name,
-                    user_docs,
                     client_message,
+                    curr_user.display_name,
+                    event_bus,
+                    user_docs,
+                    trans,
+                    websocket_schema,
                     document_service,
                 )
 
@@ -69,7 +66,6 @@ async def connect(
             if doc_id:
                 await websocket_service.cleanup_connection(
                     doc_id,
-                    user_id,
                     event_bus,
                     websocket_schema,
                     document_service,

@@ -42,7 +42,7 @@ class TestConnect:
 
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id) == 1
+        assert connection_registry.get_room_connections(doc_id) == 1
         assert ws in connection_registry.get_connections(doc_id)
 
     @pytest.mark.asyncio
@@ -56,7 +56,7 @@ class TestConnect:
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id, ws2, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id) == 2
+        assert connection_registry.get_room_connections(doc_id) == 2
 
         assert ws1 in connection_registry.get_connections(doc_id)
         assert ws2 in connection_registry.get_connections(doc_id)
@@ -72,8 +72,8 @@ class TestConnect:
         await connection_registry.connect(doc_id1, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id2, ws1, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id1) == 1
-        assert await connection_registry.get_room_connections(doc_id2) == 1
+        assert connection_registry.get_room_connections(doc_id1) == 1
+        assert connection_registry.get_room_connections(doc_id2) == 1
 
         assert ws1 in connection_registry.get_connections(doc_id1)
         assert ws1 in connection_registry.get_connections(doc_id2)
@@ -90,8 +90,8 @@ class TestConnect:
         await connection_registry.connect(doc_id1, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id2, ws2, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id1) == 1
-        assert await connection_registry.get_room_connections(doc_id2) == 1
+        assert connection_registry.get_room_connections(doc_id1) == 1
+        assert connection_registry.get_room_connections(doc_id2) == 1
 
         assert ws1 in connection_registry.get_connections(doc_id1)
         assert ws2 in connection_registry.get_connections(doc_id2)
@@ -108,7 +108,7 @@ class TestDisconnect:
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
         await connection_registry.disconnect(doc_id, ws, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id) == 0
+        assert connection_registry.get_room_connections(doc_id) == 0
         assert ws not in connection_registry.get_connections(doc_id)
 
     @pytest.mark.asyncio
@@ -124,7 +124,7 @@ class TestDisconnect:
 
         await connection_registry.disconnect(doc_id, ws1, mock_event_bus, CHANNEL)
 
-        assert await connection_registry.get_room_connections(doc_id) == 1
+        assert connection_registry.get_room_connections(doc_id) == 1
 
         assert ws1 not in connection_registry.get_connections(doc_id)
         assert ws2 in connection_registry.get_connections(doc_id)
@@ -222,12 +222,12 @@ class TestRoomConnectionsMetrics:
 
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id, ws2, mock_event_bus, CHANNEL)
-        assert await connection_registry.get_room_connections(doc_id) == 2
+        assert connection_registry.get_room_connections(doc_id) == 2
 
     @pytest.mark.asyncio
     async def test_no_connections(self, connection_registry: ConnectionRegistry):
         doc_id = uuid4()
-        assert await connection_registry.get_room_connections(doc_id) == 0
+        assert connection_registry.get_room_connections(doc_id) == 0
 
 
 class TestConnections:
@@ -242,8 +242,8 @@ class TestConnections:
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id, ws2, mock_event_bus, CHANNEL)
 
-        assert ws1 in await connection_registry.get_connections(doc_id)
-        assert ws2 in await connection_registry.get_connections(doc_id)
+        assert ws1 in connection_registry.get_connections(doc_id)
+        assert ws2 in connection_registry.get_connections(doc_id)
 
     @pytest.mark.asyncio
     async def test_no_connections(
@@ -254,7 +254,7 @@ class TestConnections:
 
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
 
-        assert ws1 not in await connection_registry.get_connections(doc_id)
+        assert ws1 not in connection_registry.get_connections(doc_id)
 
 
 class TestConnectivity:
@@ -266,11 +266,11 @@ class TestConnectivity:
         ws1 = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
-        assert await connection_registry.check_connectivity(doc_id, ws1) is True
+        assert connection_registry.check_connectivity(doc_id, ws1) is True
 
     @pytest.mark.asyncio
     async def test_no_connectivity(self, connection_registry: ConnectionRegistry):
         doc_id = uuid4()
         ws1 = get_websocket_schema()
 
-        assert await connection_registry.check_connectivity(doc_id, ws1) is False
+        assert connection_registry.check_connectivity(doc_id, ws1) is False

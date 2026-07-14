@@ -1,3 +1,4 @@
+from app.main import app
 from app.core.config import get_settings
 from app.api.repo.otp import OtpRepository
 from app.api.services.otp import OtpService
@@ -6,7 +7,12 @@ from app.api.services.user import UserService
 from app.api.repo.email import EmailRepository
 from app.api.repo.redis import RedisRepository
 from app.api.services.email import EmailService
+from app.api.repo.document import DocumentRepository
+from app.api.services.websocket import DocumentService
 from app.worker import get_db_session, get_redis_client
+from app.api.services.websocket import WebSocketService
+from app.api.repo.document_member import DocumentMemberRepository
+from app.api.services.connection_registry import ConnectionRegistry
 
 SETTINGS = get_settings()
 
@@ -37,3 +43,19 @@ def get_otp_service() -> OtpService:
 
 def get_redis_repo() -> RedisRepository:
     return RedisRepository(sync_redis=get_redis_client())
+
+
+def get_registry() -> ConnectionRegistry:
+    return app.state.registry
+
+
+def get_document_service() -> DocumentService:
+    session = get_db_session()
+    return DocumentService(
+        doc_repo=DocumentRepository(sync_session=session),
+        member_repo=DocumentMemberRepository(sync_session=session)
+    )
+
+
+def get_websocket_service() -> WebSocketService:
+    return WebSocketService(registry=get_registry(), redis=get_redis_repo())

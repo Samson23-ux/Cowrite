@@ -50,9 +50,7 @@ class DocumentService:
             self._doc_repo.rollback()
 
             sentry_sdk.capture_exception(exc)
-            sentry_logger.error(
-                "Error occurred while creating document", extra=extra
-            )
+            sentry_logger.error("Error occurred while creating document", extra=extra)
             raise ServerError() from exc
 
     async def _create_document_member(self, document_member: DocumentMemberSchema):
@@ -79,13 +77,13 @@ class DocumentService:
             raise WebSocketException(code=1011, reason="Internal Server Error")
 
     async def _get_document(self, **filters) -> Document | None:
-        return self._doc_repo.get_record(**filters)
+        return await self._doc_repo.get_record(**filters)
 
     async def _get_document_members(self, **filters) -> Sequence[UUID]:
-        return self._member_repo.get_document_members(**filters)
+        return await self._member_repo.get_document_members(**filters)
 
     async def _get_document_member(self, **filters) -> DocumentMember | None:
-        return self._member_repo.get_record(**filters)
+        return await self._member_repo.get_record(**filters)
 
     async def get_document(
         self, curr_user: User, document_id: UUID
@@ -179,6 +177,30 @@ class DocumentService:
             sentry_logger.info("Document member deleted!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
+
+            sentry_sdk.capture_exception(exc)
+            sentry_logger.error(
+                "Error occured while deleting document member",
+                extra=extra,
+            )
+            raise WebSocketException(code=1011, reason="Internal Server Error")
+
+    # sync
+
+    def _sync_get_document_member(self, **filters) -> DocumentMember | None:
+        return self._member_repo.get_sync_record(**filters)
+
+    def _sync_delete_document_member(
+        self, member: DocumentMember, user_id: UUID, doc_id: UUID
+    ):
+        try:
+            self._member_repo.sync_delete(member)
+            self._member_repo.sync_commit()
+
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+            sentry_logger.info("Document member deleted!", extra=extra)
+        except Exception as exc:
+            self._member_repo.sync_rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(

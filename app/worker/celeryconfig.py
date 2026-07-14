@@ -8,8 +8,12 @@ worker_prefetch_multiplier = 1
 
 
 beat_schedule = {
-    "redis_event": {
-        "task": "app.worker.tasks.event.check_expired_key",
+    "typing_event": {
+        "task": "app.worker.tasks.event.expired_typing_event",
+        "schedule": crontab(minute="*"),
+    },
+    "presence_event": {
+        "task": "app.worker.tasks.event.expired_presence_event",
         "schedule": crontab(minute="*"),
     }
 }

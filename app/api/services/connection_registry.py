@@ -69,17 +69,17 @@ class ConnectionRegistry:
                     extra={"doc_id": doc_id, "user_id": websocket_schema.user_id},
                 )
 
-    async def get_connections(self, doc_id: UUID) -> list[WebSocketSchema]:
+    def get_connections(self, doc_id: UUID) -> list[WebSocketSchema]:
         if doc_id in self.active_connections:
             return self.active_connections[doc_id]
         return []
 
-    async def get_room_connections(self, doc_id: UUID) -> int:
+    def get_room_connections(self, doc_id: UUID) -> int:
         if doc_id in self.active_connections:
             return len(self.active_connections[doc_id])
         return 0
 
-    async def check_connectivity(
+    def check_connectivity(
         self, doc_id: UUID, websocket_schema: WebSocketSchema
     ) -> bool:
         try:
@@ -106,3 +106,36 @@ class ConnectionRegistry:
                 )
 
                 await self.disconnect(doc_id, websocket_schema)
+
+    # sync
+
+    def sync_disconnect(
+        self,
+        doc_id: UUID,
+        websocket_schema: WebSocketSchema,
+        event_bus: EventBus,
+        channel: str,
+    ):
+        if doc_id in self.active_connections:
+            try:
+                self.active_connections[doc_id].remove(websocket_schema)
+
+                sentry_logger.info(
+                    "Connection removed from room!",
+                    extra={"doc_id": doc_id, "user_id": websocket_schema.user_id},
+                )
+
+                if not self.active_connections[doc_id]:
+                    del self.active_connections[doc_id]
+                    event_bus.sync_unsubscribe(
+                        channel
+                    )  # unsubscribe when doc room becomes empty
+
+                    sentry_logger.info(
+                        "Document room closed!", extra={"doc_id": doc_id}
+                    )
+            except ValueError:
+                sentry_logger.error(
+                    "Connection not present in room",
+                    extra={"doc_id": doc_id, "user_id": websocket_schema.user_id},
+                )
