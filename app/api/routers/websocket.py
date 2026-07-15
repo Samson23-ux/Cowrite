@@ -58,7 +58,7 @@ async def connect(
                 room_message = await event_bus.get_message(f"room:{id}")
                 if room_message:
                     # only process other clients message from redis subpub
-                    if room_message["user_id"] != str(user_id):
+                    if room_message.get("user_id") != str(user_id):
                         await websocket_service.receive_room_message(
                             websocket, id, user_id, user_email, room_message
                         )

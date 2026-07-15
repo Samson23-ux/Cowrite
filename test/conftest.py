@@ -4,8 +4,9 @@ from sqlalchemy import text
 from redis.asyncio import Redis
 from sqlalchemy.pool import NullPool
 from asgi_lifespan import LifespanManager
+from unittest.mock import patch, AsyncMock
 from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, AsyncMock, MagicMock
+from httpx_ws.transport import ASGIWebSocketTransport
 from httpx import AsyncClient, ASGITransport, Response
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -110,34 +111,11 @@ async def flush_redis(test_redis_client: Redis):
     await test_redis_client.flushdb()
 
 
-def get_request_mock():
-    fake_github_token: dict = {"access_token": "fakeaccesstoken"}
-    user_profile: dict = {
-        "id": "fake_github_id",
-        "email": "fakeadmin@example.com",
-    }
-
-    token_response = MagicMock()
-    request = MagicMock(spec=Request)
-    user_profile_response = MagicMock()
-
-    token_response.json.return_value = fake_github_token
-    user_profile_response.json.return_value = user_profile
-
-    request.post.return_value = token_response
-    request.get.return_value = user_profile_response
-
-    return request
-
-
 @pytest_asyncio.fixture
 async def async_client(async_session: AsyncSession, test_redis_client: Redis):
     async def get_test_session():
         return async_session
 
-    request = get_request_mock()
-
-    app.dependency_overrides[get_request] = lambda: request
     app.dependency_overrides[get_session] = get_test_session
     app.dependency_overrides[get_redis_client] = lambda: test_redis_client
 
@@ -151,11 +129,27 @@ async def async_client(async_session: AsyncSession, test_redis_client: Redis):
 
 
 @pytest_asyncio.fixture
+async def websocket_client(async_session: AsyncSession, test_redis_client: Redis):
+    async def get_test_session():
+        return async_session
+
+    app.dependency_overrides[get_session] = get_test_session
+    app.dependency_overrides[get_redis_client] = lambda: test_redis_client
+
+    async with LifespanManager(app):
+        async with AsyncClient(transport=ASGIWebSocketTransport(app)) as client:
+            yield client
+
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
 async def create_user(async_client: AsyncClient):
     path: str = "app.api.services.auth.send_verification_email.apply_async"
 
     sign_up_payload: dict = {
         "email": "user@example.com",
+        "display_name": "user",
         "password": "test_user_password",
     }
 

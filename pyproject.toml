@@ -12,6 +12,7 @@ dependencies = [
     "celery",
     "fastapi[all]",
     "gevent",
+    "httpx-ws>=0.9.0",
     "psycopg",
     "psycopg2",
     "pwdlib[argon2]",

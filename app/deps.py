@@ -24,6 +24,7 @@ from app.api.repo.document import DocumentRepository
 from app.api.services.document import DocumentService
 from app.api.services.websocket import WebSocketService
 from app.api.services.transformation import Transformation
+from app.api.repo.document_member import DocumentMemberRepository
 
 # Auth bearer
 bearer = HTTPBearer(auto_error=False)
@@ -76,11 +77,16 @@ async def get_document_repo(session: DBSession) -> DocumentRepository:
     return DocumentRepository(async_session=session)
 
 
+async def get_member_repo(session: DBSession) -> DocumentMemberRepository:
+    return DocumentMemberRepository(async_session=session)
+
+
 OtpRepo = Annotated[OtpRepository, Depends(get_otp_repo)]
 UserRepo = Annotated[UserRepository, Depends(get_user_repo)]
 RedisRepo = Annotated[RedisRepository, Depends(get_redis_repo)]
 EmailRepo = Annotated[EmailRepository, Depends(get_email_repo)]
 DocumentRepo = Annotated[DocumentRepository, Depends(get_document_repo)]
+MemberRepo = Annotated[DocumentMemberRepository, Depends(get_member_repo)]
 UnitOfWorkRepo = Annotated[UnitOfWorkRepository, Depends(get_unit_of_work)]
 
 #  -------------------- Service dependency ---------------------------- #
@@ -98,15 +104,23 @@ async def get_auth_service(otp_repo: OtpRepo, redis_repo: RedisRepo) -> AuthServ
     return AuthService(otp_repo=otp_repo, redis_repo=redis_repo)
 
 
-async def get_document_service(doc_repo: DocumentRepo) -> DocumentService:
-    return DocumentService(doc_repo=doc_repo)
+async def get_document_service(
+    doc_repo: DocumentRepo, member_repo: MemberRepo, redis_repo: RedisRepo
+) -> DocumentService:
+    return DocumentService(
+        doc_repo=doc_repo, member_repo=member_repo, redis_repo=redis_repo
+    )
 
 
-async def get_event_bus(request: Request,) -> EventBus:
+async def get_event_bus(
+    request: Request,
+) -> EventBus:
     return request.app.state.event_bus
 
 
-async def get_websocket_service(request: Request, redis_repo: RedisRepo) -> WebSocketService:
+async def get_websocket_service(
+    request: Request, redis_repo: RedisRepo
+) -> WebSocketService:
     registry = request.app.state.registry
     return WebSocketService(registry=registry, redis=redis_repo)
 
@@ -168,7 +182,7 @@ async def get_current_active_user(curr_user: CurrentUser):
 
 
 async def authenticate_websocket_connection(
-    token: Annotated[str | None, Query()],
+    token: Annotated[str | None, Query()] = None,
 ) -> tuple[User, str]:
     security: Security = Security()
     session = await anext(get_session())

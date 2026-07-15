@@ -65,6 +65,9 @@ class WebSocketService:
             if member:
                 await document_service._delete_document_member(member, user_id, doc_id)
 
+            schema_json: str = json.dumps(websocket_schema.model_dump())
+            await self._redis.delete_key(f"presence:{doc_id}:{schema_json}")
+
             connections: list[WebSocketSchema] = self._registry.get_connections(
                 doc_id
             )
@@ -91,7 +94,7 @@ class WebSocketService:
 
     async def receive_client_message(
         self,
-        doc_id: UUID,
+        doc_id: str,
         message: dict,
         display_name: str,
         event_bus: EventBus,
@@ -153,7 +156,7 @@ class WebSocketService:
     async def receive_room_message(
         self,
         websocket: WebSocket,
-        doc_id: UUID,
+        doc_id: str,
         user_id: UUID,
         user_email: str,
         message: dict,
@@ -173,7 +176,7 @@ class WebSocketService:
 
     async def process_join_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         channel: str,
         message: dict,
         display_name: str,
@@ -253,7 +256,7 @@ class WebSocketService:
 
     async def process_leave_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         channel: str,
         message: dict,
         event_bus: EventBus,
@@ -325,7 +328,7 @@ class WebSocketService:
 
     async def process_operation_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         channel: str,
         message: dict,
         event_bus: EventBus,
@@ -431,7 +434,7 @@ class WebSocketService:
 
     async def process_cursor_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         channel: str,
         message: dict,
         event_bus: EventBus,
@@ -462,7 +465,7 @@ class WebSocketService:
 
     async def process_ping_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         message: dict,
         websocket_schema: WebSocketSchema,
     ):
@@ -495,7 +498,7 @@ class WebSocketService:
 
     async def process_typing_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         channel: str,
         message: dict,
         event_bus: EventBus,
@@ -530,7 +533,7 @@ class WebSocketService:
 
     async def process_replay_event(
         self,
-        doc_id: UUID,
+        doc_id: str,
         message: dict,
         websocket_schema: WebSocketSchema,
     ):
@@ -574,7 +577,7 @@ class WebSocketService:
 
     def sync_cleanup_connection(
         self,
-        doc_id: UUID,
+        doc_id: str,
         event_bus: EventBus,
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,

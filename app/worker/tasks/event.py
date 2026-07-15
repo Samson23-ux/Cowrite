@@ -43,7 +43,6 @@ def expired_presence_event(self):
         event: dict = event_bus.sync_get_message(expire_channel)
 
         if event:
-            pass
             parsed_key: list[str] = event["channel"].split(":")
             doc_id: UUID = parsed_key[-2]
             schema_json: dict = json.loads(parsed_key[-1])

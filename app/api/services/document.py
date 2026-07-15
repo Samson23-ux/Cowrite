@@ -7,6 +7,7 @@ from sentry_sdk import logger as sentry_logger
 
 from app.util import get_user_email
 from app.api.models.user import User
+from app.api.repo.redis import RedisRepository
 from app.api.repo.document import DocumentRepository
 from app.api.models.document import Document, DocumentMember
 from app.api.repo.document_member import DocumentMemberRepository
@@ -21,9 +22,13 @@ from app.api.schemas.document import (
 
 class DocumentService:
     def __init__(
-        self, doc_repo: DocumentRepository, member_repo: DocumentMemberRepository
+        self,
+        redis_repo: RedisRepository,
+        doc_repo: DocumentRepository,
+        member_repo: DocumentMemberRepository,
     ):
         self._doc_repo = doc_repo
+        self._redis_repo = redis_repo
         self._member_repo = member_repo
 
     async def create_document(
@@ -42,6 +47,9 @@ class DocumentService:
             await self._doc_repo.commit()
 
             document_db: Document = await self._get_document(id=document.id)
+
+            seq_key: str = f"doc:{document_db.id}:seq"
+            await self._redis_repo.increment_counter(seq_key)
 
             extra: dict = {"email": user_email}
             sentry_logger.info("Document created!", extra=extra)

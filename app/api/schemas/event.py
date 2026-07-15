@@ -33,7 +33,7 @@ class TypingMode(str, Enum):
 class EventBase(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
-    doc_id: UUID
+    doc_id: str
 
 
 class Operation(BaseModel):
