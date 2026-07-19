@@ -25,6 +25,7 @@ from app.api.schemas.auth import (
     TokenData,
     EmailVerify,
     ResendOtp,
+    EmailSignUp
 )
 from app.core.exceptions import (
     EmailExistsError,
@@ -97,7 +98,7 @@ class AuthService:
 
     async def sign_up_with_email(
         self,
-        email_login: EmailLogin,
+        email_login: EmailSignUp,
         user_service: UserService,
         email_service: EmailService,
         security: Security,

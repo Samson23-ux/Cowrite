@@ -1,5 +1,5 @@
 import sentry_sdk
-from uuid import UUID
+from uuid import UUID, uuid7
 from sqlalchemy import Sequence
 from fastapi import WebSocketException
 from sentry_sdk import logger as sentry_logger
@@ -38,6 +38,7 @@ class DocumentService:
 
         try:
             document: DocumentInDb = DocumentInDb(
+                id=uuid7(),
                 title=document_payload.title,
                 content=document_payload.content,
                 created_by=curr_user.id,
@@ -63,13 +64,14 @@ class DocumentService:
 
     async def _create_document_member(self, document_member: DocumentMemberSchema):
         try:
-            self._member_repo.add(entity=document_member)
-            await self._member_repo.commit()
-
             extra: dict = {
                 "doc_id": document_member.doc_id,
                 "user_id": document_member.user_id,
             }
+
+            self._member_repo.add(entity=document_member)
+            await self._member_repo.commit()
+
             sentry_logger.info(
                 "Document member created!",
                 extra=extra,
@@ -99,9 +101,9 @@ class DocumentService:
         user_email: str = get_user_email(curr_user)
 
         try:
+            extra: dict = {"id": document_id, "email": user_email}
             document: Document | None = await self._get_document(id=document_id)
 
-            extra: dict = {"id": document_id, "email": user_email}
             if not document:
                 sentry_logger.error(
                     "Document not found!",
@@ -123,10 +125,11 @@ class DocumentService:
 
     async def _update_document(self, document: Document, user_id: UUID, doc_id: UUID):
         try:
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+
             self._doc_repo.add(model=document)
             await self._doc_repo.commit()
 
-            extra: dict = {"doc_id": doc_id, "user_id": user_id}
             sentry_logger.info("Document updated!", extra=extra)
         except Exception as exc:
             await self._doc_repo.rollback()
@@ -142,10 +145,11 @@ class DocumentService:
         self, document: DocumentMember, user_id: UUID, doc_id: UUID
     ):
         try:
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+            
             self._member_repo.add(model=document)
             await self._member_repo.commit()
 
-            extra: dict = {"doc_id": doc_id, "user_id": user_id}
             sentry_logger.info("Document member updated!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
@@ -157,12 +161,13 @@ class DocumentService:
             )
             raise WebSocketException(code=1011, reason="Internal Server Error")
 
-    async def _update_member_role(self, role: str, **filters):
+    async def _update_member_role(self, new_role: str, **filters):
         try:
-            await self._member_repo.update_role(role, **filters)
+            extra: dict = {"doc_id": filters["doc_id"], "user_id": filters["user_id"]}
+
+            await self._member_repo.update_role(new_role, **filters)
             await self._member_repo.commit()
 
-            extra: dict = {"doc_id": filters["doc_id"], "user_id": filters["user_id"]}
             sentry_logger.info("Document member role updated!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
@@ -178,37 +183,14 @@ class DocumentService:
         self, member: DocumentMember, user_id: UUID, doc_id: UUID
     ):
         try:
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
+
             await self._member_repo.delete(member)
             await self._member_repo.commit()
 
-            extra: dict = {"doc_id": doc_id, "user_id": user_id}
             sentry_logger.info("Document member deleted!", extra=extra)
         except Exception as exc:
             await self._member_repo.rollback()
-
-            sentry_sdk.capture_exception(exc)
-            sentry_logger.error(
-                "Error occured while deleting document member",
-                extra=extra,
-            )
-            raise WebSocketException(code=1011, reason="Internal Server Error")
-
-    # sync
-
-    def _sync_get_document_member(self, **filters) -> DocumentMember | None:
-        return self._member_repo.get_sync_record(**filters)
-
-    def _sync_delete_document_member(
-        self, member: DocumentMember, user_id: UUID, doc_id: UUID
-    ):
-        try:
-            self._member_repo.sync_delete(member)
-            self._member_repo.sync_commit()
-
-            extra: dict = {"doc_id": doc_id, "user_id": user_id}
-            sentry_logger.info("Document member deleted!", extra=extra)
-        except Exception as exc:
-            self._member_repo.sync_rollback()
 
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(

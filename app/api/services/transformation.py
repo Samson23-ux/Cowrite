@@ -3,20 +3,21 @@ from app.api.schemas.event import Operation
 
 class Transformation:
     async def apply_operation(self, doc: list, op: Operation):
+        text: list = list(op.text)
         if op.kind == "insert":
             """
             add from the beginning to the character before the position
             of insertion to the text to be inserted to the postion of
             insertion till the end of the list
             """
-            return doc[: op.pos] + op.text + doc[op.pos :]
+            return doc[: op.pos] + text + doc[op.pos :]
         else:
             """
             add from the beginning to the character before the text
             to be deleted and from the character after the text to be
             deleted till the end of the list
             """
-            return doc[: op.pos] + doc[op.pos + len(op.text) :]
+            return doc[: op.pos] + doc[op.pos + len(text) :]
 
     async def transform_insertion_against_insertion(
         self, op1: Operation, op2: Operation

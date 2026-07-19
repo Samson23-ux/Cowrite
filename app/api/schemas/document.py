@@ -1,4 +1,5 @@
-from uuid import UUID, uuid7
+from uuid import UUID
+from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,7 +15,7 @@ class DocumentBase(BaseModel):
 
 
 class DocumentInDb(DocumentBase):
-    id: UUID = uuid7()
+    id: UUID
     created_by: UUID
 
 
@@ -29,10 +30,12 @@ class DocumentMember(BaseModel):
 
 
 class DocumentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: UUID
     title: str
     content: str
     sequence: int
     created_by: UUID
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None

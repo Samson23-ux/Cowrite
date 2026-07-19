@@ -12,7 +12,8 @@ CHANNEL = "test:channel"
 
 @pytest.fixture
 def connection_registry() -> ConnectionRegistry:
-    return ConnectionRegistry()
+    redis = AsyncMock()
+    return ConnectionRegistry(redis_repo=redis)
 
 
 def mock_websocket() -> MagicMock:
@@ -23,21 +24,30 @@ def mock_websocket() -> MagicMock:
 
 @pytest.fixture
 def mock_event_bus() -> MagicMock:
-    return MagicMock()
+    bus = MagicMock()
+
+    bus.subscribe = AsyncMock()
+    bus.unsubscribe = AsyncMock()
+
+    return bus
 
 
 def get_websocket_schema() -> WebSocketSchema:
-    return WebSocketSchema(
-        websocket=mock_websocket(), user_id=uuid4(), user_email="user@example.com"
-    )
+    websocket = MagicMock()
+
+    websocket.websocket = mock_websocket()
+    websocket.user_id = uuid4()
+    websocket.user_email = "user@example.com"
+
+    return websocket
 
 
 class TestConnect:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_single_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
@@ -45,11 +55,11 @@ class TestConnect:
         assert connection_registry.get_room_connections(doc_id) == 1
         assert ws in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_multiple_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
         ws2 = get_websocket_schema()
 
@@ -61,7 +71,7 @@ class TestConnect:
         assert ws1 in connection_registry.get_connections(doc_id)
         assert ws2 in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_single_connection_multiple_docs(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
@@ -69,8 +79,12 @@ class TestConnect:
         doc_id2 = uuid4()
         ws1 = get_websocket_schema()
 
-        await connection_registry.connect(doc_id1, ws1, mock_event_bus, CHANNEL)
-        await connection_registry.connect(doc_id2, ws1, mock_event_bus, CHANNEL)
+        await connection_registry.connect(
+            doc_id1, ws1, mock_event_bus, CHANNEL
+        )
+        await connection_registry.connect(
+            doc_id2, ws1, mock_event_bus, CHANNEL
+        )
 
         assert connection_registry.get_room_connections(doc_id1) == 1
         assert connection_registry.get_room_connections(doc_id2) == 1
@@ -78,7 +92,7 @@ class TestConnect:
         assert ws1 in connection_registry.get_connections(doc_id1)
         assert ws1 in connection_registry.get_connections(doc_id2)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_multiple_connection_multiple_docs(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
@@ -87,8 +101,12 @@ class TestConnect:
         ws1 = get_websocket_schema()
         ws2 = get_websocket_schema()
 
-        await connection_registry.connect(doc_id1, ws1, mock_event_bus, CHANNEL)
-        await connection_registry.connect(doc_id2, ws2, mock_event_bus, CHANNEL)
+        await connection_registry.connect(
+            doc_id1, ws1, mock_event_bus, CHANNEL
+        )
+        await connection_registry.connect(
+            doc_id2, ws2, mock_event_bus, CHANNEL
+        )
 
         assert connection_registry.get_room_connections(doc_id1) == 1
         assert connection_registry.get_room_connections(doc_id2) == 1
@@ -98,11 +116,11 @@ class TestConnect:
 
 
 class TestDisconnect:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_disconnect_single_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
@@ -111,11 +129,11 @@ class TestDisconnect:
         assert connection_registry.get_room_connections(doc_id) == 0
         assert ws not in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_disconnect_multiple_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
         ws2 = get_websocket_schema()
 
@@ -129,21 +147,21 @@ class TestDisconnect:
         assert ws1 not in connection_registry.get_connections(doc_id)
         assert ws2 in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_disconnect_no_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws = get_websocket_schema()
 
         await connection_registry.disconnect(doc_id, ws, mock_event_bus, CHANNEL)
         assert doc_id not in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_last_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
@@ -153,24 +171,24 @@ class TestDisconnect:
 
 
 class TestBroadcast:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_broadcast(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         data = {"data": "test"}
         ws = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
-        await connection_registry.broadcast(doc_id, ws, data)
+        await connection_registry.broadcast(data, doc_id, ws)
 
         ws.websocket.send_json.assert_awaited_once_with(data)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_broadcast_single_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         data = {"data": "test"}
 
         ws1 = get_websocket_schema()
@@ -179,15 +197,15 @@ class TestBroadcast:
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
         await connection_registry.connect(doc_id, ws2, mock_event_bus, CHANNEL)
 
-        await connection_registry.broadcast(doc_id, ws1, data)
+        await connection_registry.broadcast(data, doc_id, ws1)
         ws1.websocket.send_json.assert_awaited_once_with(data)
         ws2.websocket.send_json.assert_not_awaited()
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_broadcast_closed_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         data = {"data": "test"}
         ws = get_websocket_schema()
 
@@ -195,16 +213,15 @@ class TestBroadcast:
             reason="Connection closed"
         )
 
-        await connection_registry.connect(doc_id, ws, mock_event_bus, CHANNEL)
-        await connection_registry.broadcast(doc_id, ws, data)
+        await connection_registry.broadcast(data, doc_id, ws)
 
         assert ws not in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_broadcast_no_connection(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws = get_websocket_schema()
 
         await connection_registry.disconnect(doc_id, ws, mock_event_bus, CHANNEL)
@@ -212,11 +229,11 @@ class TestBroadcast:
 
 
 class TestRoomConnectionsMetrics:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_connections_number(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
         ws2 = get_websocket_schema()
 
@@ -224,18 +241,18 @@ class TestRoomConnectionsMetrics:
         await connection_registry.connect(doc_id, ws2, mock_event_bus, CHANNEL)
         assert connection_registry.get_room_connections(doc_id) == 2
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_connections(self, connection_registry: ConnectionRegistry):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         assert connection_registry.get_room_connections(doc_id) == 0
 
 
 class TestConnections:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_connections(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
         ws2 = get_websocket_schema()
 
@@ -245,32 +262,30 @@ class TestConnections:
         assert ws1 in connection_registry.get_connections(doc_id)
         assert ws2 in connection_registry.get_connections(doc_id)
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_connections(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
-
-        await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
 
         assert ws1 not in connection_registry.get_connections(doc_id)
 
 
 class TestConnectivity:
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_get_connectivity(
         self, connection_registry: ConnectionRegistry, mock_event_bus: MagicMock
     ):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
 
         await connection_registry.connect(doc_id, ws1, mock_event_bus, CHANNEL)
         assert connection_registry.check_connectivity(doc_id, ws1) is True
 
-    @pytest.mark.asyncio
+    @pytest.mark.anyio
     async def test_no_connectivity(self, connection_registry: ConnectionRegistry):
-        doc_id = uuid4()
+        doc_id = str(uuid4())
         ws1 = get_websocket_schema()
 
         assert connection_registry.check_connectivity(doc_id, ws1) is False

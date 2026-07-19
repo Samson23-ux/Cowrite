@@ -11,6 +11,9 @@ class RedisRepository:
     async def create_hset(self, key: str, mapping: dict):
         await self._async_redis.hset(key, mapping=mapping)
 
+    async def create_set(self, key: str, value: str):
+        await self._async_redis.sadd(key, value)
+
     async def create_sorted_set(self, key: str, mapping: dict):
         await self._async_redis.zadd(key, mapping)
 
@@ -33,8 +36,22 @@ class RedisRepository:
             key, min, max, withscores=with_scores
         )
 
+    async def get_set(self, key: str) -> set[str]:
+        return await self._async_redis.smembers(key)
+
     async def get_hset(self, key: str) -> dict:
         return await self._async_redis.hgetall(key)
+    
+    async def remove_set_member(self, key: str, value: str):
+        await self._async_redis.srem(key, value)
 
     async def delete_key(self, key: str):
         await self._async_redis.delete(key)
+
+    # sync
+
+    def get_processed_email(self, key: str) -> str | None:
+        return self._sync_redis.get(key)
+
+    def mark_email_processed(self, key: str, value: str, ttl: int):
+        self._sync_redis.set(key, value, ex=ttl)

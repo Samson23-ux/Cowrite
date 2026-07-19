@@ -8,11 +8,13 @@ from app.api.models.document import DocumentMember
 from app.api.schemas.document import DocumentMember as DocumentMemberSchema
 
 
-class DocumentMemberRepository(BaseRepository[DocumentMember, DocumentMember]):
+class DocumentMemberRepository(BaseRepository[DocumentMemberSchema, DocumentMember]):
     model = DocumentMember
 
     def _entity_to_model(self, entity):
-        return DocumentMemberSchema(**entity.model_dump())
+        return DocumentMember(
+            **entity.model_dump(exclude={"doc_id"}), document_id=entity.doc_id
+        )
 
     def _get_filters(self, **filters):
         filter_conditions = []
@@ -34,8 +36,8 @@ class DocumentMemberRepository(BaseRepository[DocumentMember, DocumentMember]):
         )
         return res.scalars().all()
 
-    async def update_role(self, role: str, **filters):
+    async def update_role(self, new_role: str, **filters):
         filter_conditions = self._get_filters(**filters)
         await self._async_session.execute(
-            update(self.model).where(*filter_conditions).values(role=role)
+            update(self.model).where(*filter_conditions).values(role=new_role)
         )

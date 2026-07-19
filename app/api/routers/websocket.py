@@ -1,6 +1,7 @@
-from typing import Optional
+from uuid import uuid4
+from datetime import datetime, timezone
 import sentry_sdk.logger as sentry_logger
-from fastapi import APIRouter, WebSocket, Request, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 
 from app.api.schemas.websocket import WebSocket as WebsocketSchema
@@ -17,7 +18,6 @@ router = APIRouter()
 
 @router.websocket("/ws")
 async def connect(
-    request: Request,
     websocket: WebSocket,
     token: WebSocketAuth,
     event_bus: EventBusDep,
@@ -28,18 +28,21 @@ async def connect(
     doc_id = None
 
     curr_user, user_email = token
-    user_id = curr_user.id
+    user_id = str(curr_user.id)
 
     await websocket.accept()
     websocket_schema: WebsocketSchema = WebsocketSchema(
-        websocket=websocket, user_id=user_id, user_email=user_email
+        connection_id=str(uuid4()),
+        websocket=websocket,
+        user_id=user_id,
+        user_email=user_email,
+        joined_at=datetime.now(timezone.utc).isoformat(),
     )
 
-    user_docs = []
-
-    while True:
-        try:
+    try:
+        while True:
             client_message = await websocket_service.receive_json(websocket)
+
             if client_message:
                 doc_id = client_message.get("doc_id", "")
                 await websocket_service.receive_client_message(
@@ -47,35 +50,19 @@ async def connect(
                     client_message,
                     curr_user.display_name,
                     event_bus,
-                    user_docs,
                     trans,
                     websocket_schema,
                     document_service,
                 )
 
-            for id in user_docs:
-                # get message from subscribed channels
-                room_message = await event_bus.get_message(f"room:{id}")
-                if room_message:
-                    # only process other clients message from redis subpub
-                    if room_message.get("user_id") != str(user_id):
-                        await websocket_service.receive_room_message(
-                            websocket, id, user_id, user_email, room_message
-                        )
-        except WebSocketDisconnect:
-            if doc_id:
-                await websocket_service.cleanup_connection(
-                    doc_id,
-                    event_bus,
-                    websocket_schema,
-                    document_service,
-                )
-
-                try:
-                    user_docs.remove(doc_id)
-                except ValueError:
-                    sentry_logger.error(
-                        "Document id not found in user_docs",
-                        extra={"user_id": user_id, "doc_id": doc_id},
-                    )
-            sentry_logger.error("Websocket disconnected!", extra={"id": user_id})
+            await websocket_service.receive_room_message(doc_id, event_bus, websocket_schema)
+    except WebSocketDisconnect:
+        if doc_id:
+            await websocket_service.cleanup_connection(
+                doc_id,
+                event_bus,
+                websocket_schema,
+                document_service,
+                disconnect=True,
+            )
+        sentry_logger.error("Websocket disconnected!", extra={"id": user_id})

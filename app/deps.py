@@ -3,7 +3,7 @@ from typing import Annotated
 from redis.asyncio import Redis
 import sentry_sdk.logger as sentry_logger
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends, Request, WebSocketException
+from fastapi import Depends, Request, WebSocketException, WebSocket
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.api.models.user import User
@@ -112,20 +112,18 @@ async def get_document_service(
     )
 
 
-async def get_event_bus(
-    request: Request,
-) -> EventBus:
-    return request.app.state.event_bus
+async def get_event_bus(websocket: WebSocket) -> EventBus:
+    return EventBus(websocket.app.state.redis)
 
 
 async def get_websocket_service(
-    request: Request, redis_repo: RedisRepo
+    websocket: WebSocket, redis_repo: RedisRepo
 ) -> WebSocketService:
-    registry = request.app.state.registry
+    registry = websocket.app.state.registry
     return WebSocketService(registry=registry, redis=redis_repo)
 
 
-async def get_transformation(trans: Transformation) -> Transformation:
+async def get_transformation() -> Transformation:
     return Transformation()
 
 
@@ -141,10 +139,10 @@ WebSocketServiceDep = Annotated[WebSocketService, Depends(get_websocket_service)
 
 
 async def get_current_user(
+    security: SecurityDep,
     user_service: UserServiceDep,
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer)],
 ) -> User:
-    security: Security = Security()
     if not credentials:
         sentry_logger.error("User not authenticated")
         raise AuthenticationError()
@@ -182,12 +180,10 @@ async def get_current_active_user(curr_user: CurrentUser):
 
 
 async def authenticate_websocket_connection(
+    security: SecurityDep,
+    user_service: UserServiceDep,
     token: Annotated[str | None, Query()] = None,
 ) -> tuple[User, str]:
-    security: Security = Security()
-    session = await anext(get_session())
-    user_service = UserService(UserRepository(async_session=session))
-
     if not token:
         sentry_logger.error("User not authenticated")
         raise WebSocketException(code=1008, reason="User not authenticated")

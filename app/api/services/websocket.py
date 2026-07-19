@@ -1,8 +1,6 @@
 import json
 import asyncio
 import sentry_sdk
-from uuid import UUID
-from sqlalchemy import Sequence
 from pydantic import ValidationError
 from datetime import datetime, timezone
 from sentry_sdk import logger as sentry_logger
@@ -45,49 +43,66 @@ class WebSocketService:
 
     async def cleanup_connection(
         self,
-        doc_id: UUID,
+        doc_id: str,
         event_bus: EventBus,
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,
+        disconnect: bool = False,
     ):
+        extra: dict = {"doc_id": doc_id, "user_id": user_id}
         try:
-            user_id: UUID = websocket_schema.user_id
-
             channel: str = f"room:{doc_id}"
+            user_id: str = websocket_schema.user_id
+
+            key: str = f"user:{user_id}:{doc_id}"
+            if disconnect:
+                await self._redis.delete_key(key)
+            else:
+                await self._redis.remove_set_member(key, doc_id)
+
             await self._registry.disconnect(
                 doc_id, websocket_schema, event_bus, channel
             )
 
-            member: Document | None = await document_service._get_document_member(
+            member: DocumentMember | None = await document_service._get_document_member(
                 document_id=doc_id, user_id=user_id
             )
 
             if member:
                 await document_service._delete_document_member(member, user_id, doc_id)
 
-            schema_json: str = json.dumps(websocket_schema.model_dump())
-            await self._redis.delete_key(f"presence:{doc_id}:{schema_json}")
-
-            connections: list[WebSocketSchema] = self._registry.get_connections(
-                doc_id
+            await self._redis.delete_key(
+                f"presence:{doc_id}:{websocket_schema.connection_id}"
             )
-            document_members: list[UUID] = [c.user_id for c in connections]
+
+            connections: list[WebSocketSchema] = self._registry.get_connections(doc_id)
+            document_members: list[str] = [c.user_id for c in connections]
 
             presence: dict = PresenceResponse(
                 doc_id=doc_id, users=document_members
             ).model_dump()
             await event_bus.publish(channel, presence)
+        except ValueError:
+            sentry_logger.error(
+                "Document member not found!",
+                extra=extra,
+            )
+            raise WebSocketException(
+                code=1003, reason="Client not a member of the document"
+            )
         except Exception as exc:
             sentry_sdk.capture_exception(exc)
             sentry_logger.error(
                 "Error occured while cleaning connection",
-                extra={"doc_id": doc_id, "user_id": user_id},
+                extra=extra,
             )
             raise WebSocketException(code=1011, reason="Internal Server Error")
 
-    async def receive_json(self, websocket: WebSocket, timeout: int = 30):
+    async def receive_json(
+        self, websocket: WebSocket, timeout: int = 0.1
+    ) -> dict | None:
         try:
-            message = asyncio.wait_for(websocket.receive_json(), timeout=timeout)
+            message = await asyncio.wait_for(websocket.receive_json(), timeout=timeout)
             return message
         except asyncio.TimeoutError, asyncio.CancelledError:
             return
@@ -98,7 +113,6 @@ class WebSocketService:
         message: dict,
         display_name: str,
         event_bus: EventBus,
-        user_docs: list[UUID],
         trans: Transformation,
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,
@@ -116,7 +130,6 @@ class WebSocketService:
                 message,
                 display_name,
                 event_bus,
-                user_docs,
                 document_service,
                 websocket_schema,
             )
@@ -126,7 +139,6 @@ class WebSocketService:
                 channel,
                 message,
                 event_bus,
-                user_docs,
                 websocket_schema,
                 document_service,
             )
@@ -155,24 +167,22 @@ class WebSocketService:
 
     async def receive_room_message(
         self,
-        websocket: WebSocket,
         doc_id: str,
-        user_id: UUID,
-        user_email: str,
-        message: dict,
+        event_bus: EventBus,
+        websocket_schema: WebSocketSchema,
     ):
-        try:
-            websocket_schema: WebSocketSchema = WebSocketSchema(
-                websocket=websocket, user_id=user_id, user_email=user_email
-            )
-            await self._registry.broadcast(doc_id, websocket_schema, message)
-        except Exception as exc:
-            sentry_sdk.capture_exception(exc)
-            sentry_logger.error(
-                "Error occured while broadcasting message",
-                extra={"doc_id": doc_id, "user_id": user_id},
-            )
-            raise WebSocketException(code=1011, reason="Internal Server Error")
+        user_id: str = websocket_schema.user_id
+        user_docs: set = await self._redis.get_set(f"user:{user_id}:{doc_id}")
+
+        for id in user_docs:
+            # get message from subscribed channels
+            room_message = await event_bus.get_message(f"room:{id}")
+            if room_message:
+                # only process other clients message from redis subpub
+                if room_message.get("user_id", "") != user_id:
+                    await self._registry.broadcast(
+                        room_message, doc_id, websocket_schema
+                    )
 
     async def process_join_event(
         self,
@@ -181,7 +191,6 @@ class WebSocketService:
         message: dict,
         display_name: str,
         event_bus: EventBus,
-        user_docs: list[UUID],
         document_service: DocumentService,
         websocket_schema: WebSocketSchema,
     ):
@@ -190,17 +199,19 @@ class WebSocketService:
         In the case of server failures or crash, a join
         event is sent to reconnect to room
         """
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         try:
             _ = JoinEvent.model_validate(message)
-            self._registry.connect(doc_id, websocket_schema, event_bus, channel)
 
-            document: Document | None = await document_service._get_document(doc_id)
+            await self._redis.create_set(f"user:{user_id}:{doc_id}", doc_id)
+            await self._registry.connect(doc_id, websocket_schema, event_bus, channel)
+
+            document: Document | None = await document_service._get_document(id=doc_id)
             if not document:
                 sentry_logger.error("Document not found!", extra=extra)
-                raise WebSocketException(code=1008, reason="Document not found")
+                raise WebSocketException(code=1003, reason="Document not found")
 
             document_member_db: DocumentMember | None = (
                 await document_service._get_document_member(
@@ -213,14 +224,15 @@ class WebSocketService:
                 document_member_db.joined_at = datetime.now(timezone.utc)
                 await document_service._update_document_member(document_member_db)
             else:
-                role: str = "author" if user_id == document.created_by else "viewer"
+                role: str = (
+                    "author" if user_id == str(document.created_by) else "viewer"
+                )
                 document_member: DocumentMemberSchema = DocumentMemberSchema(
                     user_id=user_id, doc_id=doc_id, role=role
                 )
                 await document_service._create_document_member(document_member)
 
-            schema_json: str = json.dumps(websocket_schema.model_dump())
-            presence_key: str = f"presence:{doc_id}:{schema_json}"
+            presence_key: str = f"presence:{doc_id}:{websocket_schema.connection_id}"
             await self._redis.set_key(presence_key, display_name, 30)
 
             user_joined_response: dict = UserJoinedResponse(
@@ -228,10 +240,8 @@ class WebSocketService:
             ).model_dump()
             await event_bus.publish(channel, user_joined_response)
 
-            connections: list[WebSocketSchema] = self._registry.get_connections(
-                doc_id
-            )
-            document_members: list[UUID] = [c.user_id for c in connections]
+            connections: list[WebSocketSchema] = self._registry.get_connections(doc_id)
+            document_members: list[str] = [c.user_id for c in connections]
 
             presence: dict = PresenceResponse(
                 doc_id=doc_id, users=document_members
@@ -242,11 +252,8 @@ class WebSocketService:
                 doc_id=doc_id,
                 content=document.content,
                 seq=document.sequence,
-                presence=document_members,
             ).model_dump()
-            await self._registry.broadcast(doc_id, websocket_schema, joined_response)
-
-            user_docs.append(doc_id)
+            await self._registry.broadcast(joined_response, doc_id, websocket_schema)
         except ValidationError:
             sentry_logger.error(
                 "Invalid payload received for join event",
@@ -260,11 +267,10 @@ class WebSocketService:
         channel: str,
         message: dict,
         event_bus: EventBus,
-        user_docs: list[UUID],
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -277,7 +283,10 @@ class WebSocketService:
         try:
             _ = LeaveEvent.model_validate(message)
 
-            self._registry.disconnect(doc_id, websocket_schema, event_bus, channel)
+            await self._redis.remove_set_member(f"user:{user_id}:{doc_id}", doc_id)
+            await self._registry.disconnect(
+                doc_id, websocket_schema, event_bus, channel
+            )
 
             document_member: DocumentMember | None = (
                 await document_service._get_document_member(
@@ -291,7 +300,7 @@ class WebSocketService:
                     extra=extra,
                 )
                 raise WebSocketException(
-                    code=1008, reason="Client not a member of the document"
+                    code=1003, reason="Client not a member of the document"
                 )
 
             await document_service._delete_document_member(
@@ -303,17 +312,13 @@ class WebSocketService:
             ).model_dump()
             await event_bus.publish(channel, left_response)
 
-            connections: list[WebSocketSchema] = self._registry.get_connections(
-                doc_id
-            )
-            document_members: list[UUID] = [c.user_id for c in connections]
+            connections: list[WebSocketSchema] = self._registry.get_connections(doc_id)
+            document_members: list[str] = [c.user_id for c in connections]
 
             presence: dict = PresenceResponse(
                 doc_id=doc_id, users=document_members
             ).model_dump()
             await event_bus.publish(channel, presence)
-
-            user_docs.remove(doc_id)
         except ValidationError:
             sentry_logger.error(
                 "Invalid payload received for leave event",
@@ -324,7 +329,9 @@ class WebSocketService:
                 "Document member not found!",
                 extra=extra,
             )
-            raise WebSocketException(code=1003, reason="Invalid payload!")
+            raise WebSocketException(
+                code=1003, reason="Client not a member of the document"
+            )
 
     async def process_operation_event(
         self,
@@ -336,7 +343,7 @@ class WebSocketService:
         websocket_schema: WebSocketSchema,
         document_service: DocumentService,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -347,16 +354,17 @@ class WebSocketService:
             raise WebSocketException(code=1003, reason="Client disconnected!")
 
         try:
+            msg_op: dict = message.get("op")
             op2: Operation = Operation(
-                kind=message.get("kind"),
-                pos=message.get("pos"),
-                text=message.get("text"),
+                kind=msg_op.get("kind"),
+                pos=msg_op.get("pos"),
+                text=msg_op.get("text"),
             )
             op_event: OperationEvent = OperationEvent(
                 doc_id=doc_id, op=op2, base_seq=message.get("base_seq")
             )
 
-            document: Document | None = await document_service._get_document(doc_id)
+            document: Document | None = await document_service._get_document(id=doc_id)
             if not document:
                 sentry_logger.error("Document not found!", extra=extra)
                 raise WebSocketException(code=1008, reason="Document not found")
@@ -366,15 +374,15 @@ class WebSocketService:
 
             base_seq: int = op_event.base_seq
 
+            op_key: str = f"doc:{doc_id}:ops"
             if base_seq < curr_seq:
                 # transform operations since base_seq
-                key: str = f"doc{doc_id}:ops"
                 logs: list[tuple] = await self._redis.get_sorted_set(
-                    key, base_seq + 1, curr_seq
+                    op_key, base_seq + 1, curr_seq
                 )
 
                 temp_pos = None
-                op_log: list[dict] = [json.loads(l) for l, _ in logs]
+                op_log: list[dict] = [json.loads(l) for l in logs]
 
                 for log in op_log:
                     op1: Operation = Operation.model_validate(log)
@@ -409,18 +417,18 @@ class WebSocketService:
 
             await document_service._update_document(document, user_id, doc_id)
 
-            if user_id != document.created_by:
+            if user_id != str(document.created_by):
                 await document_service._update_member_role(
                     "editor", doc_id=doc_id, user_id=user_id, role="viewer"
                 )
 
-            op2_log = json.dumps(op2)
-            await self._redis.create_sorted_set(key, {op2_log: new_seq})
+            op2_log = json.dumps(op2.model_dump())
+            await self._redis.create_sorted_set(op_key, {op2_log: new_seq})
 
             ack_resposne: AckResponse = AckResponse(
                 doc_id=doc_id, seq=new_seq
             ).model_dump()
-            await self._registry.broadcast(doc_id, websocket_schema, ack_resposne)
+            await self._registry.broadcast(ack_resposne, doc_id, websocket_schema)
 
             op_response: dict = OperationResponse(
                 doc_id=doc_id, op=op2, seq=new_seq, user_id=user_id
@@ -440,7 +448,7 @@ class WebSocketService:
         event_bus: EventBus,
         websocket_schema: WebSocketSchema,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -469,7 +477,7 @@ class WebSocketService:
         message: dict,
         websocket_schema: WebSocketSchema,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -482,12 +490,13 @@ class WebSocketService:
         try:
             _ = PingEvent.model_validate(message)
 
-            schema_json: str = json.dumps(websocket_schema.model_dump())
-            key: str = f"presence:{doc_id}:{schema_json}"
+            key: str = f"presence:{doc_id}:{websocket_schema.connection_id}"
             await self._redis.reset_key_ttl(key, 30)
 
             await self._registry.broadcast(
-                doc_id, websocket_schema, PongResponse().model_dump()
+                PongResponse().model_dump(),
+                doc_id,
+                websocket_schema,
             )
         except ValidationError:
             sentry_logger.error(
@@ -504,7 +513,7 @@ class WebSocketService:
         event_bus: EventBus,
         websocket_schema: WebSocketSchema,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -537,7 +546,7 @@ class WebSocketService:
         message: dict,
         websocket_schema: WebSocketSchema,
     ):
-        user_id: UUID = websocket_schema.user_id
+        user_id: str = websocket_schema.user_id
         extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
         if not self._registry.check_connectivity(doc_id, websocket_schema):
@@ -553,7 +562,8 @@ class WebSocketService:
             seq_key: str = f"doc:{doc_id}:seq"
             curr_seq: int = int(await self._redis.get_key(seq_key))
 
-            key: str = f"doc{doc_id}:ops"
+            key: str = f"doc:{doc_id}:ops"
+
             logs: list[tuple] = await self._redis.get_sorted_set(
                 key, replay.seq + 1, curr_seq, with_scores=True
             )
@@ -565,51 +575,10 @@ class WebSocketService:
                 op_response: dict = OperationResponse(
                     doc_id=doc_id, op=operation, seq=seq, user_id=user_id
                 ).model_dump()
-                await self._registry.broadcast(doc_id, websocket_schema, op_response)
+                await self._registry.broadcast(op_response, doc_id, websocket_schema)
         except ValidationError:
             sentry_logger.error(
                 "Invalid payload received for replay event",
                 extra=extra,
             )
             raise WebSocketException(code=1003, reason="Invalid payload!")
-        
-    # sync
-
-    def sync_cleanup_connection(
-        self,
-        doc_id: str,
-        event_bus: EventBus,
-        websocket_schema: WebSocketSchema,
-        document_service: DocumentService,
-    ):
-        try:
-            user_id: UUID = websocket_schema.user_id
-
-            channel: str = f"room:{doc_id}"
-            self._registry.sync_disconnect(
-                doc_id, websocket_schema, event_bus, channel
-            )
-
-            member: Document | None = document_service._sync_get_document_member(
-                document_id=doc_id, user_id=user_id
-            )
-
-            if member:
-                document_service._sync_delete_document_member(member, user_id, doc_id)
-
-            connections: list[WebSocketSchema] = self._registry.get_connections(
-                doc_id
-            )
-            document_members: list[UUID] = [c.user_id for c in connections]
-
-            presence: dict = PresenceResponse(
-                doc_id=doc_id, users=document_members
-            ).model_dump()
-            event_bus.sync_publish(channel, presence)
-        except Exception as exc:
-            sentry_sdk.capture_exception(exc)
-            sentry_logger.error(
-                "Error occured while cleaning connection",
-                extra={"doc_id": doc_id, "user_id": user_id},
-            )
-            raise WebSocketException(code=1011, reason="Internal Server Error")

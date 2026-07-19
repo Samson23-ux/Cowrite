@@ -1,4 +1,3 @@
-from uuid import UUID
 from enum import Enum
 from pydantic import BaseModel, ConfigDict
 
@@ -71,18 +70,17 @@ class ReplayEvent(EventBase):
     seq: int
 
 
-class PingEvent(BaseModel):
+class PingEvent(EventBase):
     type: EventType = EventType.PING
 
 # Server → Client
 class UserIdResponse(EventBase):
-    user_id: UUID
+    user_id: str
 
 class JoinedResponse(EventBase):
     type: EventType = EventType.JOINED
     content: str
     seq: int
-    presence: list[UUID]
 
 
 class AckResponse(EventBase):
@@ -90,11 +88,10 @@ class AckResponse(EventBase):
     seq: int
 
 
-class OperationResponse(EventBase):
+class OperationResponse(UserIdResponse):
     type: EventType = EventType.OPERATION
     op: Operation
     seq: int
-    user_id: UUID
 
 
 class CursorResponse(UserIdResponse):
@@ -118,7 +115,7 @@ class LeftResponse(UserIdResponse):
 
 class PresenceResponse(EventBase):
     type: EventType = EventType.PRESENCE
-    users: list[UUID]
+    users: list[str]
 
 
 class PongResponse(BaseModel):

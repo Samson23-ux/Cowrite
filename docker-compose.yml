@@ -1,0 +1,157 @@
+services:
+  cowrite_api_db:
+    image: postgres:18-alpine
+    container_name: cowrite_api_db
+    restart: always
+    volumes:
+      - cowrite_api_db:/var/lib/postgresql
+    environment:
+      - POSTGRES_DB=cowrite
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5432:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -p 5432 -U postgres -d cowrite"]
+      retries: 5
+      timeout: 10s
+      interval: 30s
+      start_period: 30s
+      start_interval: 5s
+
+  cowrite_test_db:
+    image: postgres:18-alpine
+    container_name: cowrite_test_db
+    restart: always
+    volumes:
+      - cowrite_test_db:/var/lib/postgresql
+    environment:
+      - POSTGRES_DB=cowrite
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - 5433:5433
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -p 5433 -U postgres -d cowrite"]
+      retries: 5
+      timeout: 10s
+      interval: 30s
+      start_period: 30s
+      start_interval: 5s
+
+  cowrite_redis:
+    image: redis:8-alpine
+    container_name: cowrite_redis
+    restart: always
+    volumes:
+      - cowrite_redis:/var/lib/redis
+    ports:
+      - 6379:6379
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      retries: 5
+      timeout: 10s
+      interval: 30s
+      start_period: 30s
+      start_interval: 5s
+
+  cowrite_broker:
+    image: rabbitmq:4.0-management-alpine
+    container_name: cowrite_broker
+    restart: always
+    volumes:
+      - cowrite_broker:/var/lib/rabbitmq
+    environment:
+      - RABBITMQ_DEFUALT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+      - RABBITMQ_DEFAULT_VHOST=vhost
+    ports:
+      - 5672:5672
+      - 15672:15672
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q check_running"]
+      retries: 5
+      timeout: 10s
+      interval: 30s
+      start_period: 30s
+      start_interval: 5s
+
+  cowrite_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    container_name: cowrite_worker
+    restart: always
+    volumes:
+      - .:/Cowrite
+      - /Cowrite/.venv
+    environment:
+      - REDIS_URL=redis://cowrite_redis:6379/0
+      - BROKER_URL=amqp://guest:guest@cowrite_broker:5672/vhost
+      - ASYNC_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_api_db:5432/cowrite
+      - SYNC_DB_URL=postgresql+psycopg2://postgres:postgres@cowrite_api_db:5432/cowrite
+      - ASYNC_TEST_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_test_db:5432/test_db
+    command:
+      ["uv", "run", "celery", "-A", "app.worker.celery_app", "worker", "-P", "gevent", "-l", "info"]
+    depends_on:
+      cowrite_api_db:
+        condition: service_healthy
+      cowrite_redis:
+        condition: service_healthy
+      cowrite_broker:
+        condition: service_healthy
+
+  cowrite_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    container_name: cowrite_beat
+    restart: always
+    volumes:
+      - .:/Cowrite
+      - /Cowrite/.venv
+      - beat_data:/Cowrite/celerybeat-schedule
+    environment:
+      - REDIS_URL=redis://cowrite_redis:6379/0
+      - BROKER_URL=amqp://guest:guest@cowrite_broker:5672/vhost
+      - ASYNC_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_api_db:5432/cowrite
+      - SYNC_DB_URL=postgresql+psycopg2://postgres:postgres@cowrite_api_db:5432/cowrite
+      - ASYNC_TEST_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_test_db:5432/test_db
+    command: ["uv", "run", "celery", "-A", "app.worker.celery_app", "beat", "-l", "info"]
+    depends_on:
+      cowrite_worker:
+        condition: service_healthy
+
+  cowrite_api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file: .env
+    container_name: cowrite_api
+    restart: always
+    volumes:
+      - .:/Cowrite
+      - /Cowrite/.venv
+      - pytest_cache:/Cowrite/.pytest_cache
+    environment:
+      - REDIS_URL=redis://cowrite_redis:6379/0
+      - BROKER_URL=amqp://guest:guest@cowrite_broker:5672/vhost
+      - ASYNC_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_api_db:5432/cowrite
+      - SYNC_DB_URL=postgresql+psycopg2://postgres:postgres@cowrite_api_db:5432/cowrite
+      - ASYNC_TEST_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_test_db:5432/test_db
+    ports:
+      - 8000:8000
+    depends_on:
+      cowrite_worker:
+        condition: service_healthy
+
+volumes:
+  cowrite_api_db:
+  cowrite_test_db:
+  cowrite_redis:
+  cowrite_broker:
+  beat_data:
+  pytest_cache:
+  

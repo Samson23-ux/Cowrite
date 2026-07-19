@@ -31,7 +31,7 @@ class Document(Base):
     )
     title: Mapped[str] = mapped_column(String)
     content: Mapped[str] = mapped_column(String)
-    sequence: Mapped[int] = mapped_column(Integer, default=0)
+    sequence: Mapped[int] = mapped_column(Integer, default=1)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID, ForeignKey("users.id", name="documents_created_by_fk", ondelete="CASCADE")
     )

@@ -24,6 +24,7 @@ from app.api.schemas.auth import (
     ResendOtp,
     OtpResendResponse,
     LogoutResponse,
+    EmailSignUp
 )
 
 router = APIRouter()
@@ -42,7 +43,7 @@ router = APIRouter()
 async def sign_up_with_email(
     request: Request,
     security: SecurityDep,
-    email_login: EmailLogin,
+    email_login: EmailSignUp,
     auth_service: AuthServiceDep,
     user_service: UserServiceDep,
     email_service: EmailServiceDep,
@@ -56,6 +57,52 @@ async def sign_up_with_email(
             "Check your email for verification code and instructions"
         )
     )
+
+
+@router.get(
+    "/auth/google",
+    status_code=302,
+    response_class=RedirectResponse,
+    description="Sign in with Google account",
+)
+@limiter.limit("3/5minute")
+async def sign_in_with_google(request: Request, security: SecurityDep):
+    redirect_uri = request.url_for("google_callback")
+    await security.register_oauth()
+    return await security.oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@router.get(
+    "/auth/google/callback",
+    status_code=200,
+    response_model=SuccessResponse[Token],
+    description="Google redirect uri",
+)
+@limiter.limit("3/5minute")
+async def google_callback(
+    request: Request,
+    response: Response,
+    security: SecurityDep,
+    auth_service: AuthServiceDep,
+    user_service: UserServiceDep,
+):
+    await security.register_oauth()
+    payload: dict = await security.oauth.google.authorize_access_token(request)
+    access_token, refresh_token = await auth_service.sign_up_with_google(
+        payload, user_service, security
+    )
+
+    expire_time: int = get_settings().REFRESH_TOKEN_EXPIRE_TIME * 24 * 3600
+
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=expire_time,
+        secure=get_settings().ENVIRONMENT == "production",
+        samesite="lax",
+    )
+
+    return SuccessResponse(data=Token(access_token=access_token))
 
 
 @router.patch(
