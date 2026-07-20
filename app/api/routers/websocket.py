@@ -66,3 +66,5 @@ async def connect(
                 disconnect=True,
             )
         sentry_logger.error("Websocket disconnected!", extra={"id": user_id})
+    finally:
+        await event_bus.pubsub.aclose()

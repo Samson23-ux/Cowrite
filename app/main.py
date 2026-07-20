@@ -126,6 +126,7 @@ async def lifespan(app: FastAPI):
     t1.cancel(), t2.cancel()
     asyncio.gather(t1, t2, return_exceptions=True)
 
+    await event_bus.pubsub.aclose()
     await app.state.redis.aclose()
 
 

@@ -97,12 +97,25 @@ async def session_maker(async_engine: AsyncEngine):
     await async_transaction.rollback()
     await async_connection.close()
 
+from redis.asyncio.connection import ConnectionPool
+
+
+@pytest.fixture(scope="session")
+async def redis_pool():
+    try:
+        pool: ConnectionPool = ConnectionPool.from_url(
+            get_settings().REDIS_URL, decode_responses=True, max_connections=20
+        )
+        yield pool
+    finally:
+        await pool.disconnect()
+
 
 @pytest.fixture
-async def test_redis_client():
+async def test_redis_client(redis_pool: ConnectionPool):
     try:
-        redis_client: Redis = Redis.from_url(
-            get_settings().REDIS_URL, decode_responses=True
+        redis_client: Redis = Redis(
+            connection_pool=redis_pool
         )
         yield redis_client
     finally:

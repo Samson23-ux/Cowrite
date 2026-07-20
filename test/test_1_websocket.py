@@ -3,7 +3,7 @@ import pytest
 from uuid import uuid4
 from httpx_ws import aconnect_ws, WebSocketDisconnect
 
-TIMEOUT = 3
+TIMEOUT = 5
 WEBSOCKET_URL = "ws://localhost/api/v1/ws"
 
 
