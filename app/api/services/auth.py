@@ -25,7 +25,7 @@ from app.api.schemas.auth import (
     TokenData,
     EmailVerify,
     ResendOtp,
-    EmailSignUp
+    EmailSignUp,
 )
 from app.core.exceptions import (
     EmailExistsError,
@@ -96,6 +96,32 @@ class AuthService:
 
         return user_email, user_type
 
+    async def _resend_email(
+        self,
+        user: User,
+        email_id: UUID,
+        hashed_password: str,
+        email_service: EmailService,
+        user_service: UserService,
+    ):
+        user.hashed_password = hashed_password
+        await user_service.update_user(user)
+
+        email_db: EmailInDB = EmailInDB(
+            id=email_id,
+            processed_email=user.email,
+        )
+        await email_service.create_email(email_db)
+
+        send_verification_email.apply_async(
+            priority=5,
+            kwargs={
+                "email_id": email_id,
+                "recipient_email": user.email,
+                "user_id": str(user.id),
+            },
+        )
+
     async def sign_up_with_email(
         self,
         email_login: EmailSignUp,
@@ -116,33 +142,32 @@ class AuthService:
             display_name=display_name
         )
 
-        if existing_email or existing_name:
+        if existing_email:
             if not existing_email.is_verified:
-                existing_email.hashed_password = hashed_password
-                await user_service.update_user(existing_email)
-
-                email_db: EmailInDB = EmailInDB(id=email_id, processed_email=user_email)
-                await email_service.create_email(email_db)
-
-                send_verification_email.apply_async(
-                    priority=5,
-                    kwargs={
-                        "email_id": email_id,
-                        "recipient_email": user_email,
-                        "user_id": str(existing_email.id),
-                    },
+                await self._resend_email(
+                    existing_email,
+                    email_id,
+                    hashed_password,
+                    email_service,
+                    user_service,
                 )
             else:
-                if existing_email:
-                    sentry_logger.error(
-                        "User exists with email {email}", email=user_email
-                    )
-                    raise EmailExistsError(user_email=user_email)
-                else:
-                    sentry_logger.error(
-                        "User exists with display name {name}", name=display_name
-                    )
-                    raise NameExistsError(user_email=user_email)
+                sentry_logger.error("User exists with email {email}", email=user_email)
+                raise EmailExistsError(user_email=user_email)
+        elif existing_name:
+            if not existing_name.is_verified:
+                await self._resend_email(
+                    existing_name,
+                    email_id,
+                    hashed_password,
+                    email_service,
+                    user_service,
+                )
+            else:
+                sentry_logger.error(
+                    "User exists with display name {name}", name=display_name
+                )
+                raise NameExistsError(display_name=display_name)
         else:
             user = UserInDB(
                 display_name=display_name,
@@ -190,10 +215,14 @@ class AuthService:
             is_verified=True,
         )
 
-        if existing_email or existing_name:
+        if existing_email:
             if not existing_email.is_active:
                 existing_email.is_active = True
                 await user_service.update_user(existing_email)
+        elif existing_name:
+            if not existing_name.is_active:
+                existing_name.is_active = True
+                await user_service.update_user(existing_name)
         else:
             user = UserInDB(
                 type="google",

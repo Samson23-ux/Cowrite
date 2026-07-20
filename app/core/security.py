@@ -26,7 +26,7 @@ class Security:
             client_secret=self.SETTINGS.GOOGLE_CLIENT_SECRET,
             server_metadata_url=self.SETTINGS.GOOGLE_OAUTH_URL,
             client_kwargs={
-                "scope": "openid email",
+                "scope": "openid email profile",
             },
         )
 

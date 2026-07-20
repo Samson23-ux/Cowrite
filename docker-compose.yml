@@ -102,28 +102,6 @@ services:
       cowrite_broker:
         condition: service_healthy
 
-  cowrite_beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    env_file: .env
-    container_name: cowrite_beat
-    restart: always
-    volumes:
-      - .:/Cowrite
-      - /Cowrite/.venv
-      - beat_data:/Cowrite/celerybeat-schedule
-    environment:
-      - REDIS_URL=redis://cowrite_redis:6379/0
-      - BROKER_URL=amqp://guest:guest@cowrite_broker:5672/vhost
-      - ASYNC_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_api_db:5432/cowrite
-      - SYNC_DB_URL=postgresql+psycopg2://postgres:postgres@cowrite_api_db:5432/cowrite
-      - ASYNC_TEST_DB_URL=postgresql+asyncpg://postgres:postgres@cowrite_test_db:5432/test_db
-    command: ["uv", "run", "celery", "-A", "app.worker.celery_app", "beat", "-l", "info"]
-    depends_on:
-      cowrite_worker:
-        condition: service_healthy
-
   cowrite_api:
     build:
       context: .
@@ -144,7 +122,11 @@ services:
     ports:
       - 8000:8000
     depends_on:
-      cowrite_worker:
+      cowrite_api_db:
+        condition: service_healthy
+      cowrite_redis:
+        condition: service_healthy
+      cowrite_broker:
         condition: service_healthy
 
 volumes:
@@ -152,6 +134,5 @@ volumes:
   cowrite_test_db:
   cowrite_redis:
   cowrite_broker:
-  beat_data:
   pytest_cache:
   

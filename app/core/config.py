@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     API_EMAIL: str
     RESEND_API_KEY: str
 
+    # notification
+    IDEMPOTENCY_KEY_TTL: int = 60 * 60 * 24
+
     # otp
     OTP_EXPIRE_TIME: int = 15
 

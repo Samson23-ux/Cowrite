@@ -2,7 +2,6 @@ import sentry_sdk
 from celery import Celery
 
 from app.core.config import get_settings
-from app.api.services.event import EventBus
 
 SETTINGS = get_settings()
 
@@ -22,3 +21,6 @@ celery_app = Celery(
 )
 
 celery_app.config_from_object("app.worker.celeryconfig")
+
+
+celery_app.autodiscover_tasks(["app.worker.tasks.email"])
