@@ -40,8 +40,10 @@ class Transformation:
     ) -> int:
         if op1.pos >= op2.pos:
             return op2.pos
-        else:
+        elif op2.pos >= (op1.pos + len(op1.text)):
             return op2.pos - len(op1.text)
+        else:
+            return op1.pos  # insertion point was inside the deleted range
 
     async def transform_deletion_against_deletion(
         self, op1: Operation, op2: Operation

@@ -4,7 +4,7 @@ from uuid import uuid4
 from httpx_ws import aconnect_ws, WebSocketDisconnect
 
 TIMEOUT = 5
-WEBSOCKET_URL = "ws://localhost/api/v1/ws"
+WEBSOCKET_URL = "/ws"
 
 
 @pytest.fixture
@@ -217,7 +217,7 @@ class TestLeaveEvent:
             try:
                 await client.send_json(leave_payload)
             except WebSocketDisconnect as exc:
-                assert exc.code == 1003
+                assert exc.code == 1008
                 assert exc.reason == "Client disconnected!"
 
 

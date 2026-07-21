@@ -14,6 +14,7 @@ class EventType(str, Enum):
     TYPING = "typing"
     REPLAY = "replay"
     PRESENCE = "presence"
+    DISCARDED = "discarded"
     OPERATION = "operation"
     USER_LEFT = "user_left"
     USER_JOINED = "user_joined"
@@ -90,6 +91,12 @@ class AckResponse(EventBase):
 
 class OperationResponse(UserIdResponse):
     type: EventType = EventType.OPERATION
+    op: Operation
+    seq: int
+
+
+class OperationDiscarded(EventBase):
+    type: EventType = EventType.DISCARDED
     op: Operation
     seq: int
 

@@ -59,45 +59,57 @@ async def websocket_service(app: FastAPI):
 
 
 async def expired_typing_event(app: FastAPI):
-    event_bus: EventBus = app.state.event_bus
-    async for message in event_bus.pubsub.listen():
-        channel: str = message["channel"]
+    event_bus = EventBus(async_redis=app.state.redis)
+    await event_bus.psubscribe("__keyspace@0__:typing:*")
 
-        if channel.startswith("__keyspace@0__:typing:"):
-            parse_key: list = channel.split(":")
+    try:
+        async for message in event_bus.pubsub.listen():
+            channel: str = message["channel"]
 
-            doc_id: str = parse_key[-2]
-            user_id: UUID = parse_key[-1]
+            if channel.startswith("__keyspace@0__:typing:"):
+                parse_key: list = channel.split(":")
 
-            typing_response: dict = TypingResponse(
-                doc_id=doc_id, user_id=user_id, mode="stopped"
-            ).model_dump()
-            await event_bus.publish(f"room:{doc_id}", typing_response)
+                doc_id: str = parse_key[-2]
+                user_id: UUID = parse_key[-1]
+
+                typing_response: dict = TypingResponse(
+                    doc_id=doc_id, user_id=user_id, mode="stopped"
+                ).model_dump()
+                await event_bus.publish(f"room:{doc_id}", typing_response)
+    finally:
+        await event_bus.punsubscribe("__keyspace@0__:typing:*")
+        await event_bus.pubsub.aclose()
 
 
 async def expired_presence_event(app: FastAPI):
     doc_service: DocumentService = await document_service(app)
     ws_service: WebSocketService = await websocket_service(app)
 
-    event_bus: EventBus = app.state.event_bus
+    event_bus = EventBus(async_redis=app.state.redis)
     registry: ConnectionRegistry = app.state.registry
 
-    async for message in event_bus.pubsub.listen():
-        channel: str = message["channel"]
+    await event_bus.psubscribe("__keyspace@0__:presence:*")
 
-        if channel.startswith("__keyspace@0__:presence:"):
-            parse_key: list = channel.split(":")
+    try:
+        async for message in event_bus.pubsub.listen():
+            channel: str = message["channel"]
 
-            doc_id: str = parse_key[-2]
-            connection_id: str = parse_key[-1]
+            if channel.startswith("__keyspace@0__:presence:"):
+                parse_key: list = channel.split(":")
 
-            ws_schema: list[WebsocketSchema] = registry.get_connections(doc_id)
-            for ws in ws_schema:
-                if ws.connection_id == connection_id:
-                    await ws_service.cleanup_connection(
-                        doc_id, event_bus, ws, doc_service
-                    )
-                    break
+                doc_id: str = parse_key[-2]
+                connection_id: str = parse_key[-1]
+
+                ws_schema: list[WebsocketSchema] = registry.get_connections(doc_id)
+                for ws in ws_schema:
+                    if ws.connection_id == connection_id:
+                        await ws_service.cleanup_connection(
+                            doc_id, event_bus, ws, doc_service
+                        )
+                        break
+    finally:
+        await event_bus.punsubscribe("__keyspace@0__:presence:*")
+        await event_bus.pubsub.aclose()
 
 
 @asynccontextmanager
@@ -110,23 +122,15 @@ async def lifespan(app: FastAPI):
     app.state.registry = ConnectionRegistry(
         RedisRepository(async_redis=app.state.redis)
     )
-    event_bus = EventBus(async_redis=app.state.redis)
-
-    await event_bus.psubscribe("__keyspace@0__:typing:*")
-    await event_bus.psubscribe("__keyspace@0__:presence:*")
 
     t1 = asyncio.create_task(expired_typing_event(app))
     t2 = asyncio.create_task(expired_presence_event(app))
 
     yield
 
-    await event_bus.punsubscribe("__keyspace@0__:typing:*")
-    await event_bus.punsubscribe("__keyspace@0__:presence:*")
-
     t1.cancel(), t2.cancel()
     asyncio.gather(t1, t2, return_exceptions=True)
 
-    await event_bus.pubsub.aclose()
     await app.state.redis.aclose()
 
 

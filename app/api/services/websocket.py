@@ -3,6 +3,7 @@ import asyncio
 import sentry_sdk
 from pydantic import ValidationError
 from datetime import datetime, timezone
+from datetime import datetime, timezone
 from sentry_sdk import logger as sentry_logger
 from fastapi import WebSocket, WebSocketException
 
@@ -33,6 +34,7 @@ from app.api.schemas.event import (
     TypingEvent,
     TypingResponse,
     ReplayEvent,
+    OperationDiscarded,
 )
 
 
@@ -49,10 +51,10 @@ class WebSocketService:
         document_service: DocumentService,
         disconnect: bool = False,
     ):
-        extra: dict = {"doc_id": doc_id, "user_id": user_id}
         try:
             channel: str = f"room:{doc_id}"
             user_id: str = websocket_schema.user_id
+            extra: dict = {"doc_id": doc_id, "user_id": user_id}
 
             key: str = f"user:{user_id}:{doc_id}"
             if disconnect:
@@ -205,6 +207,9 @@ class WebSocketService:
         try:
             _ = JoinEvent.model_validate(message)
 
+            connections: list[WebSocketSchema] = self._registry.get_connections(doc_id)
+            curr_document_members: list[str] = [c.user_id for c in connections]
+
             await self._redis.create_set(f"user:{user_id}:{doc_id}", doc_id)
             await self._registry.connect(doc_id, websocket_schema, event_bus, channel)
 
@@ -222,7 +227,9 @@ class WebSocketService:
             if document_member_db:
                 """catch duplicates when join events are sent after server failure"""
                 document_member_db.joined_at = datetime.now(timezone.utc)
-                await document_service._update_document_member(document_member_db)
+                await document_service._update_document_member(
+                    document_member_db, user_id, doc_id
+                )
             else:
                 role: str = (
                     "author" if user_id == str(document.created_by) else "viewer"
@@ -235,18 +242,19 @@ class WebSocketService:
             presence_key: str = f"presence:{doc_id}:{websocket_schema.connection_id}"
             await self._redis.set_key(presence_key, display_name, 30)
 
-            user_joined_response: dict = UserJoinedResponse(
-                doc_id=doc_id, user_id=user_id, display_name=display_name
-            ).model_dump()
-            await event_bus.publish(channel, user_joined_response)
-
             connections: list[WebSocketSchema] = self._registry.get_connections(doc_id)
             document_members: list[str] = [c.user_id for c in connections]
 
-            presence: dict = PresenceResponse(
-                doc_id=doc_id, users=document_members
-            ).model_dump()
-            await event_bus.publish(channel, presence)
+            if user_id not in curr_document_members:
+                user_joined_response: dict = UserJoinedResponse(
+                    doc_id=doc_id, user_id=user_id, display_name=display_name
+                ).model_dump()
+                await event_bus.publish(channel, user_joined_response)
+
+                presence: dict = PresenceResponse(
+                    doc_id=doc_id, users=document_members
+                ).model_dump()
+                await event_bus.publish(channel, presence)
 
             joined_response: dict = JoinedResponse(
                 doc_id=doc_id,
@@ -278,7 +286,7 @@ class WebSocketService:
                 "Client connection not found!",
                 extra=extra,
             )
-            raise WebSocketException(code=1003, reason="Client disconnected!")
+            raise WebSocketException(code=1008, reason="Client disconnected!")
 
         try:
             _ = LeaveEvent.model_validate(message)
@@ -386,7 +394,14 @@ class WebSocketService:
 
                 for log in op_log:
                     op1: Operation = Operation.model_validate(log)
-                    temp_pos: int = await trans.transform(op1, op2)
+                    temp_pos: int | None = await trans.transform(op1, op2)
+
+                if temp_pos is None and op1.kind == "delete" and op2.kind == "delete":
+                    discard_response: OperationDiscarded = OperationDiscarded(
+                        doc_id=doc_id, op=op2, seq=base_seq
+                    ).model_dump()
+                    await self._registry.broadcast(discard_response, doc_id, websocket_schema)
+                    return
 
                 op2.pos = temp_pos
                 doc_content = list(document.content)
@@ -414,6 +429,7 @@ class WebSocketService:
             content: str = "".join(updated_doc)
             document.content = content
             document.sequence = new_seq
+            document.updated_at = datetime.now(timezone.utc)
 
             await document_service._update_document(document, user_id, doc_id)
 

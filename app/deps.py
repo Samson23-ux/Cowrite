@@ -2,8 +2,9 @@ from fastapi import Query
 from typing import Annotated
 from redis.asyncio import Redis
 import sentry_sdk.logger as sentry_logger
+from fastapi.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends, Request, WebSocketException, WebSocket
+from fastapi import Depends, WebSocketException, WebSocket
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.api.models.user import User
@@ -35,7 +36,7 @@ DBSession = Annotated[AsyncSession, Depends(get_session)]
 
 
 # ------------------- Redis dependency ------------------------------ #
-async def get_redis_client(request: Request) -> Redis:
+async def get_redis_client(request: HTTPConnection) -> Redis:
     redis_client: Redis = request.app.state.redis
     return redis_client
 

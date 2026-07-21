@@ -171,7 +171,8 @@ async def websocket_client(
     app.dependency_overrides[get_redis_client] = lambda: test_redis_client
 
     async with AsyncClient(
-        transport=ASGIWebSocketTransport(lifespan_manager.app)
+        transport=ASGIWebSocketTransport(lifespan_manager.app),
+        base_url="ws://localhost/api/v1",
     ) as client:
         yield client
 
