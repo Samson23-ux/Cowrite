@@ -426,6 +426,9 @@ class WebSocketService:
                 seq_key
             )  # redis incr for atomicity and concurrent requests
 
+            op2_log = json.dumps(op2.model_dump())
+            await self._redis.create_sorted_set(op_key, {op2_log: new_seq})
+
             content: str = "".join(updated_doc)
             document.content = content
             document.sequence = new_seq
@@ -437,9 +440,6 @@ class WebSocketService:
                 await document_service._update_member_role(
                     "editor", doc_id=doc_id, user_id=user_id, role="viewer"
                 )
-
-            op2_log = json.dumps(op2.model_dump())
-            await self._redis.create_sorted_set(op_key, {op2_log: new_seq})
 
             ack_resposne: AckResponse = AckResponse(
                 doc_id=doc_id, seq=new_seq
